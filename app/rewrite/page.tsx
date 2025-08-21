@@ -61,7 +61,7 @@ export default function RewritePage() {
 
       // Save rewrite record
       const rewriteRecord: RewriteRecord = {
-        id: `rewrite-${Date.now()}`,
+        id: `rewrite-${crypto.randomUUID()}`,
         articleId: selectedMaterial.id,
         originalTitle: selectedMaterial.title,
         rewrittenTitle: result.title,

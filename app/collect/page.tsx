@@ -134,7 +134,7 @@ export default function CollectPage() {
                         }`}
                         onClick={() => handlePlatformToggle(platform.id)}
                       >
-                        <Checkbox checked={selectedPlatforms.includes(platform.id)} readOnly />
+                        <Checkbox checked={selectedPlatforms.includes(platform.id)} />
                         <span className="text-lg">{platform.icon}</span>
                         <span className="text-sm font-medium">{platform.name}</span>
                       </div>

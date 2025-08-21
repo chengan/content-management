@@ -1,4 +1,4 @@
-import type { Article, WeChatAccount, AppConfig } from "@/types"
+import type { Article, WeChatAccount, AppConfig } from "@/src/types"
 
 export const mockArticles: Article[] = [
   {

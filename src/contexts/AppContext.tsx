@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, type ReactNode } from "react"
-import type { AppState, Article, RewriteRecord, PublicationRecord, WeChatAccount, AppConfig } from "@/types"
+import type { AppState, Article, RewriteRecord, PublicationRecord, WeChatAccount, AppConfig } from "@/src/types"
 import { mockArticles, mockAccounts, defaultConfig } from "../data/mock-data"
 
 interface AppContextType extends AppState {

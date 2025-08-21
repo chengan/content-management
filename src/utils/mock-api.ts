@@ -1,4 +1,4 @@
-import type { Article } from "@/types"
+import type { Article } from "@/src/types"
 
 // Mock network delay
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -9,7 +9,7 @@ export const mockCollectContent = async (platform: string, keyword?: string): Pr
   // Simulate collecting new articles
   const baseArticles = [
     {
-      id: `collected-${Date.now()}-1`,
+      id: `collected-${crypto.randomUUID()}-1`,
       title: `${platform}热门文章：${keyword || "最新内容"}分析`,
       content: `这是从${platform}采集到的关于${keyword || "热门话题"}的文章内容...`,
       source: platform,
@@ -19,12 +19,12 @@ export const mockCollectContent = async (platform: string, keyword?: string): Pr
       collectTime: new Date().toISOString(),
       tags: keyword ? [keyword, platform] : [platform],
       category: "科技",
-      readCount: Math.floor(Math.random() * 10000),
-      likeCount: Math.floor(Math.random() * 1000),
+      readCount: 8563,
+      likeCount: 742,
       status: "pending" as const,
     },
     {
-      id: `collected-${Date.now()}-2`,
+      id: `collected-${crypto.randomUUID()}-2`,
       title: `深度解析：${keyword || "行业趋势"}的未来发展`,
       content: `本文深入分析了${keyword || "当前热点"}的发展趋势和未来前景...`,
       source: platform,
@@ -34,8 +34,8 @@ export const mockCollectContent = async (platform: string, keyword?: string): Pr
       collectTime: new Date().toISOString(),
       tags: keyword ? [keyword, "趋势分析"] : ["趋势分析"],
       category: "分析",
-      readCount: Math.floor(Math.random() * 8000),
-      likeCount: Math.floor(Math.random() * 800),
+      readCount: 6247,
+      likeCount: 521,
       status: "pending" as const,
     },
   ]
@@ -80,12 +80,12 @@ export const mockPublishArticle = async (
   await delay(1500)
 
   // Simulate 90% success rate
-  const success = Math.random() > 0.1
+  const success = true
 
   if (success) {
     return {
       success: true,
-      publicationId: `pub-${Date.now()}`,
+      publicationId: `pub-${crypto.randomUUID()}`,
     }
   } else {
     throw new Error("发布失败：网络连接异常")

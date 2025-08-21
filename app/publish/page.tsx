@@ -95,9 +95,9 @@ export default function PublishPage() {
           publishedAt: new Date().toISOString(),
           status: "success",
           stats: {
-            views: Math.floor(Math.random() * 1000),
-            likes: Math.floor(Math.random() * 100),
-            shares: Math.floor(Math.random() * 50),
+            views: 528,
+            likes: 42,
+            shares: 18,
           },
         }
 
@@ -190,8 +190,8 @@ export default function PublishPage() {
 
                 <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
                   <div className="flex items-center gap-4 text-sm text-gray-500">
-                    <span>阅读 {Math.floor(Math.random() * 1000)}</span>
-                    <span>在看 {Math.floor(Math.random() * 100)}</span>
+                    <span>阅读 528</span>
+                    <span>在看 42</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button variant="ghost" size="sm" className="text-xs">

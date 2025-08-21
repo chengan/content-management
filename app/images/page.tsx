@@ -90,7 +90,7 @@ export default function ImagesPage() {
 
       // Create generated image records
       const newImages: GeneratedImage[] = imageUrls.map((url, index) => ({
-        id: `img-${Date.now()}-${index}`,
+        id: `img-${crypto.randomUUID()}-${index}`,
         articleId: selectedMaterial.id,
         url,
         prompt: finalPrompt,
