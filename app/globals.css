@@ -1,0 +1,158 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Updated color system to light green theme with orange accents */
+  --background: oklch(0.98 0.02 142); /* #f0f9f4 - very light green background */
+  --foreground: oklch(0.25 0.015 258); /* #374151 - dark gray text */
+  --card: oklch(1 0 0); /* #ffffff - pure white for cards */
+  --card-foreground: oklch(0.25 0.015 258); /* #374151 - dark gray text on cards */
+  --popover: oklch(1 0 0); /* #ffffff - white for popovers */
+  --popover-foreground: oklch(0.25 0.015 258); /* #374151 - dark gray text in popovers */
+  --primary: oklch(0.85 0.08 142); /* #a8e6cf - light green primary */
+  --primary-foreground: oklch(0.25 0.015 258); /* #374151 - dark gray for primary text */
+  --secondary: oklch(0.68 0.15 65); /* #ff8c00 - orange for accents */
+  --secondary-foreground: oklch(1 0 0); /* #ffffff - white text on orange */
+  --muted: oklch(0.96 0.03 142); /* #f0f9f4 - light green for muted elements */
+  --muted-foreground: oklch(0.45 0.01 258); /* #6b7280 - medium gray for muted text */
+  --accent: oklch(0.68 0.15 65); /* #ff8c00 - orange for call-to-action */
+  --accent-foreground: oklch(1 0 0); /* #ffffff - white text on accent elements */
+  --destructive: oklch(0.65 0.15 12); /* #ef4444 - red for destructive actions */
+  --destructive-foreground: oklch(1 0 0); /* #ffffff - white text on destructive actions */
+  --border: oklch(0.85 0.005 258); /* #d1d5db - light gray for borders */
+  --input: oklch(1 0 0); /* #ffffff - white for input fields */
+  --ring: oklch(0.85 0.08 142); /* #a8e6cf - light green for focus rings */
+  --chart-1: oklch(0.85 0.08 142); /* #a8e6cf - light green for charts */
+  --chart-2: oklch(0.68 0.15 65); /* #ff8c00 - orange for charts */
+  --chart-3: oklch(0.25 0.015 258); /* #374151 - dark gray for charts */
+  --chart-4: oklch(0.85 0.005 258); /* #d1d5db - light gray for charts */
+  --chart-5: oklch(0.96 0.03 142); /* #f0f9f4 - very light green for charts */
+  --radius: 0.5rem; /* Corner rounding */
+  --sidebar: oklch(1 0 0); /* #ffffff - white sidebar background */
+  --sidebar-foreground: oklch(0.25 0.015 258); /* #374151 - sidebar text */
+  --sidebar-primary: oklch(0.85 0.08 142); /* #a8e6cf - sidebar primary color */
+  --sidebar-primary-foreground: oklch(0.25 0.015 258); /* #374151 - sidebar primary text */
+  --sidebar-accent: oklch(0.68 0.15 65); /* #ff8c00 - sidebar accent */
+  --sidebar-accent-foreground: oklch(1 0 0); /* #ffffff - sidebar accent text */
+  --sidebar-border: oklch(0.85 0.005 258); /* #d1d5db - sidebar border */
+  --sidebar-ring: oklch(0.85 0.08 142); /* #a8e6cf - sidebar focus ring */
+}
+
+.dark {
+  /* Updated dark mode colors to maintain green theme with better contrast */
+  --background: oklch(0.12 0.01 142); /* Dark green background */
+  --foreground: oklch(0.95 0.005 142); /* Light green text */
+  --card: oklch(0.15 0.01 142); /* Dark green cards */
+  --card-foreground: oklch(0.95 0.005 142); /* Light text on cards */
+  --popover: oklch(0.15 0.01 142); /* Dark green popovers */
+  --popover-foreground: oklch(0.95 0.005 142); /* Light text in popovers */
+  --primary: oklch(0.75 0.08 142); /* Brighter green for dark mode */
+  --primary-foreground: oklch(0.12 0.01 142); /* Dark text on primary */
+  --secondary: oklch(0.65 0.15 65); /* Orange accent in dark mode */
+  --secondary-foreground: oklch(1 0 0); /* White text on orange */
+  --muted: oklch(0.18 0.01 142); /* Muted dark green */
+  --muted-foreground: oklch(0.65 0.005 142); /* Muted light text */
+  --accent: oklch(0.65 0.15 65); /* Orange accent */
+  --accent-foreground: oklch(1 0 0); /* White text on accent */
+  --destructive: oklch(0.55 0.15 12); /* Darker red for dark mode */
+  --destructive-foreground: oklch(0.95 0.005 12); /* Light text on destructive */
+  --border: oklch(0.25 0.01 142); /* Dark border */
+  --input: oklch(0.18 0.01 142); /* Dark input background */
+  --ring: oklch(0.75 0.08 142); /* Bright green focus ring */
+  --chart-1: oklch(0.75 0.08 142); /* Bright green for charts */
+  --chart-2: oklch(0.65 0.15 65); /* Orange for charts */
+  --chart-3: oklch(0.95 0.005 142); /* Light text for charts */
+  --chart-4: oklch(0.25 0.01 142); /* Dark gray for charts */
+  --chart-5: oklch(0.18 0.01 142); /* Dark green for charts */
+  --sidebar: oklch(0.15 0.01 142); /* Dark sidebar */
+  --sidebar-foreground: oklch(0.95 0.005 142); /* Light sidebar text */
+  --sidebar-primary: oklch(0.75 0.08 142); /* Bright green sidebar primary */
+  --sidebar-primary-foreground: oklch(0.12 0.01 142); /* Dark text on sidebar primary */
+  --sidebar-accent: oklch(0.65 0.15 65); /* Orange sidebar accent */
+  --sidebar-accent-foreground: oklch(1 0 0); /* White text on sidebar accent */
+  --sidebar-border: oklch(0.25 0.01 142); /* Dark sidebar border */
+  --sidebar-ring: oklch(0.75 0.08 142); /* Bright green sidebar focus ring */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Added smooth transitions for better user experience */
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    @apply transition-all duration-200 ease-in-out;
+  }
+
+  /* Enhanced focus states with green theme */
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    @apply ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Improved hover states for interactive elements */
+  button:hover,
+  a:hover {
+    @apply transform scale-[1.02];
+  }
+
+  /* Enhanced card shadows for better depth perception */
+  .card-shadow {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  }
+
+  .card-shadow-lg {
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  }
+}
