@@ -4,8 +4,8 @@ import type React from "react"
 import { useState } from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "../../../components/ui/button"
+import { Avatar, AvatarFallback, AvatarImage } from "../../../components/ui/avatar"
 import {
   Home,
   Download,
@@ -21,7 +21,7 @@ import {
   Moon,
   Sun,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn } from "../../../lib/utils"
 
 interface NavigationItem {
   name: string

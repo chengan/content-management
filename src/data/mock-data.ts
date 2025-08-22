@@ -16,6 +16,8 @@ export const mockArticles: Article[] = [
     readCount: 5240,
     likeCount: 328,
     status: "pending",
+    createdAt: "2024-01-16T08:00:00Z",
+    updatedAt: "2024-01-16T08:00:00Z",
   },
   {
     id: "2",
@@ -31,6 +33,8 @@ export const mockArticles: Article[] = [
     readCount: 3890,
     likeCount: 256,
     status: "pending",
+    createdAt: "2024-01-16T09:15:00Z",
+    updatedAt: "2024-01-16T09:15:00Z",
   },
   {
     id: "3",
@@ -46,6 +50,8 @@ export const mockArticles: Article[] = [
     readCount: 2156,
     likeCount: 189,
     status: "rewritten",
+    createdAt: "2024-01-16T10:30:00Z",
+    updatedAt: "2024-01-16T11:30:00Z",
   },
   {
     id: "4",
@@ -61,6 +67,8 @@ export const mockArticles: Article[] = [
     readCount: 4567,
     likeCount: 312,
     status: "published",
+    createdAt: "2024-01-16T11:45:00Z",
+    updatedAt: "2024-01-16T12:45:00Z",
   },
 ]
 

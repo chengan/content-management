@@ -1,23 +1,23 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { useApp } from "@/src/contexts/AppContext"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useApp } from "../../src/contexts/AppContext"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card"
+import { Button } from "../../components/ui/button"
+import { Input } from "../../components/ui/input"
+import { Label } from "../../components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select"
+import { Checkbox } from "../../components/ui/checkbox"
+import { Badge } from "../../components/ui/badge"
+import { Separator } from "../../components/ui/separator"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "../../components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "../../components/ui/dropdown-menu"
 import {
   FolderOpen,
   Search,
@@ -36,8 +36,12 @@ import {
   Clock,
   Send,
   RefreshCw,
+  AlertCircle,
+  Loader2,
+  X,
+  ExternalLink,
 } from "lucide-react"
-import type { Article } from "@/src/types"
+import type { Article } from "../../src/types"
 
 const statusConfig = {
   pending: { label: "待处理", color: "bg-yellow-100 text-yellow-800", icon: Clock },
@@ -49,7 +53,17 @@ const platforms = ["全部", "微信公众号", "知乎", "百度热搜", "微�
 const categories = ["全部", "科技", "营销", "商业", "教育", "娱乐", "健康", "财经"]
 
 export default function MaterialsPage() {
-  const { materials, updateMaterial, deleteMaterial } = useApp()
+  const { 
+    materials, 
+    updateMaterial, 
+    deleteMaterial, 
+    batchDeleteMaterials, 
+    batchUpdateMaterialsStatus,
+    loading, 
+    error, 
+    clearError,
+    refreshMaterials 
+  } = useApp()
   const [viewMode, setViewMode] = useState<"list" | "grid">("list")
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedPlatform, setSelectedPlatform] = useState("全部")
@@ -57,6 +71,7 @@ export default function MaterialsPage() {
   const [selectedStatus, setSelectedStatus] = useState("全部")
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([])
   const [editingMaterial, setEditingMaterial] = useState<Article | null>(null)
+  const [viewingMaterial, setViewingMaterial] = useState<Article | null>(null)
   const [showFilters, setShowFilters] = useState(false)
 
   // Filter materials based on search and filters
@@ -87,24 +102,36 @@ export default function MaterialsPage() {
     setSelectedMaterials((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
   }
 
-  const handleBatchDelete = () => {
-    selectedMaterials.forEach((id) => deleteMaterial(id))
-    setSelectedMaterials([])
+  const handleBatchDelete = async () => {
+    try {
+      await batchDeleteMaterials(selectedMaterials)
+      setSelectedMaterials([])
+    } catch (error) {
+      console.error('Batch delete failed:', error)
+    }
   }
 
-  const handleBatchStatusUpdate = (status: Article["status"]) => {
-    selectedMaterials.forEach((id) => updateMaterial(id, { status }))
-    setSelectedMaterials([])
+  const handleBatchStatusUpdate = async (status: Article["status"]) => {
+    try {
+      await batchUpdateMaterialsStatus(selectedMaterials, status)
+      setSelectedMaterials([])
+    } catch (error) {
+      console.error('Batch status update failed:', error)
+    }
   }
 
   const handleEditMaterial = (material: Article) => {
     setEditingMaterial(material)
   }
 
-  const handleSaveEdit = (updates: Partial<Article>) => {
+  const handleSaveEdit = async (updates: Partial<Article>) => {
     if (editingMaterial) {
-      updateMaterial(editingMaterial.id, updates)
-      setEditingMaterial(null)
+      try {
+        await updateMaterial(editingMaterial.id, updates)
+        setEditingMaterial(null)
+      } catch (error) {
+        console.error('Update material failed:', error)
+      }
     }
   }
 
@@ -137,12 +164,18 @@ export default function MaterialsPage() {
                   <Edit className="h-4 w-4 mr-2" />
                   编辑
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setViewingMaterial(material)}>
                   <Eye className="h-4 w-4 mr-2" />
                   查看详情
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => deleteMaterial(material.id)} className="text-red-600">
+                <DropdownMenuItem onClick={async () => {
+                  try {
+                    await deleteMaterial(material.id)
+                  } catch (error) {
+                    console.error('Delete material failed:', error)
+                  }
+                }} className="text-red-600">
                   <Trash2 className="h-4 w-4 mr-2" />
                   删除
                 </DropdownMenuItem>
@@ -268,12 +301,18 @@ export default function MaterialsPage() {
                 <Edit className="h-4 w-4 mr-2" />
                 编辑
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setViewingMaterial(material)}>
                 <Eye className="h-4 w-4 mr-2" />
                 查看详情
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => deleteMaterial(material.id)} className="text-red-600">
+              <DropdownMenuItem onClick={async () => {
+                try {
+                  await deleteMaterial(material.id)
+                } catch (error) {
+                  console.error('Delete material failed:', error)
+                }
+              }} className="text-red-600">
                 <Trash2 className="h-4 w-4 mr-2" />
                 删除
               </DropdownMenuItem>
@@ -294,6 +333,19 @@ export default function MaterialsPage() {
             <p className="text-gray-600">管理和组织您的内容素材库</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={refreshMaterials}
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              刷新
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")}>
               {viewMode === "list" ? <Grid3X3 className="h-4 w-4" /> : <List className="h-4 w-4" />}
             </Button>
@@ -303,6 +355,24 @@ export default function MaterialsPage() {
             </Button>
           </div>
         </div>
+
+        {/* Error Alert */}
+        {error && (
+          <Card className="mb-6 border-red-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-red-600">
+                  <AlertCircle className="h-4 w-4" />
+                  <span className="text-sm font-medium">操作失败</span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={clearError}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-red-600 text-sm mt-2">{error}</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Search and Filters */}
         <Card className="mb-6">
@@ -384,14 +454,35 @@ export default function MaterialsPage() {
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">已选择 {selectedMaterials.length} 个素材</span>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => handleBatchStatusUpdate("rewritten")}>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => handleBatchStatusUpdate("rewritten")}
+                    disabled={loading}
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                     标记为已改写
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleBatchStatusUpdate("published")}>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => handleBatchStatusUpdate("published")}
+                    disabled={loading}
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                     标记为已发布
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={handleBatchDelete}>
-                    <Trash2 className="h-4 w-4 mr-2" />
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    onClick={handleBatchDelete}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Trash2 className="h-4 w-4 mr-2" />
+                    )}
                     批量删除
                   </Button>
                 </div>
@@ -456,6 +547,14 @@ export default function MaterialsPage() {
                   </table>
                 </div>
               )
+            ) : loading ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+                </div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">正在加载素材...</h3>
+                <p className="text-gray-500 mb-4">请稍候</p>
+              </div>
             ) : (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -484,6 +583,17 @@ export default function MaterialsPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* View Material Detail Dialog */}
+        <Dialog open={!!viewingMaterial} onOpenChange={() => setViewingMaterial(null)}>
+          {viewingMaterial && (
+            <MaterialDetailDialog
+              material={viewingMaterial}
+              onClose={() => setViewingMaterial(null)}
+              onEdit={handleEditMaterial}
+            />
+          )}
+        </Dialog>
       </div>
     </div>
   )
@@ -498,6 +608,7 @@ function EditMaterialForm({
   onSave: (updates: Partial<Article>) => void
   onCancel: () => void
 }) {
+  const { loading } = useApp()
   const [title, setTitle] = useState(material.title)
   const [category, setCategory] = useState(material.category)
   const [tags, setTags] = useState(material.tags.join(", "))
@@ -545,11 +656,185 @@ function EditMaterialForm({
         <Input id="tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="输入标签，用逗号分隔" />
       </div>
       <div className="flex justify-end gap-2 pt-4">
-        <Button variant="outline" onClick={onCancel}>
+        <Button variant="outline" onClick={onCancel} disabled={loading}>
           取消
         </Button>
-        <Button onClick={handleSave}>保存</Button>
+        <Button onClick={handleSave} disabled={loading}>
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              保存中...
+            </>
+          ) : (
+            '保存'
+          )}
+        </Button>
       </div>
     </div>
+  )
+}
+
+function MaterialDetailDialog({
+  material,
+  onClose,
+  onEdit,
+}: {
+  material: Article
+  onClose: () => void
+  onEdit: (material: Article) => void
+}) {
+  const statusInfo = statusConfig[material.status]
+  const StatusIcon = statusInfo.icon
+
+  return (
+    <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <Eye className="h-5 w-5" />
+          素材详情
+        </DialogTitle>
+        <DialogDescription>
+          查看素材的完整信息
+        </DialogDescription>
+      </DialogHeader>
+      
+      <div className="flex-1 overflow-y-auto space-y-6">
+        {/* 基本信息 */}
+        <div className="space-y-4">
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">标题</Label>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <p className="text-gray-900 font-medium">{material.title}</p>
+            </div>
+          </div>
+          
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">内容</Label>
+            <div className="p-4 bg-gray-50 rounded-md max-h-60 overflow-y-auto">
+              <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                {material.content}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 元数据信息 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">来源平台</Label>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <Badge variant="outline">{material.source}</Badge>
+            </div>
+          </div>
+          
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">作者</Label>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <span className="text-gray-700">{material.author}</span>
+            </div>
+          </div>
+          
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">分类</Label>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <Badge variant="secondary">{material.category}</Badge>
+            </div>
+          </div>
+          
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">状态</Label>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium w-fit ${statusInfo.color}`}>
+                <StatusIcon className="h-3 w-3" />
+                {statusInfo.label}
+              </div>
+            </div>
+          </div>
+          
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">发布时间</Label>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <span className="text-gray-700">{new Date(material.publishTime).toLocaleString()}</span>
+            </div>
+          </div>
+          
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">采集时间</Label>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <span className="text-gray-700">{new Date(material.collectTime).toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 数据统计 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">阅读量</Label>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <div className="flex items-center gap-2">
+                <Eye className="h-4 w-4 text-gray-500" />
+                <span className="text-gray-700 font-medium">{material.readCount.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">点赞量</Label>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <div className="flex items-center gap-2">
+                <Heart className="h-4 w-4 text-gray-500" />
+                <span className="text-gray-700 font-medium">{material.likeCount.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 标签 */}
+        {material.tags.length > 0 && (
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">标签</Label>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <div className="flex flex-wrap gap-2">
+                {material.tags.map((tag) => (
+                  <Badge key={tag} variant="secondary" className="text-xs">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 原文链接 */}
+        {material.sourceUrl && (
+          <div>
+            <Label className="text-sm font-medium text-gray-900 mb-2 block">原文链接</Label>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <a
+                href={material.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                <ExternalLink className="h-4 w-4" />
+                <span className="truncate">{material.sourceUrl}</span>
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          关闭
+        </Button>
+        <Button onClick={() => {
+          onEdit(material)
+          onClose()
+        }}>
+          编辑素材
+        </Button>
+      </DialogFooter>
+    </DialogContent>
   )
 }

@@ -12,6 +12,8 @@ export interface Article {
   readCount: number
   likeCount: number
   status: "pending" | "rewritten" | "published"
+  createdAt: string
+  updatedAt: string
 }
 
 export interface RewriteStyle {

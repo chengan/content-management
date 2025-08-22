@@ -3,8 +3,8 @@ import type { Metadata } from "next"
 import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
 import "./globals.css"
-import { AppProvider } from "@/src/contexts/AppContext"
-import { AppLayout } from "@/src/components/layout/AppLayout"
+import { AppProvider } from "../src/contexts/AppContext"
+import { AppLayout } from "../src/components/layout/AppLayout"
 
 export const metadata: Metadata = {
   title: "AI公众号内容管理系统",

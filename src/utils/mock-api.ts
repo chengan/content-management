@@ -22,6 +22,8 @@ export const mockCollectContent = async (platform: string, keyword?: string): Pr
       readCount: 8563,
       likeCount: 742,
       status: "pending" as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     {
       id: `collected-${crypto.randomUUID()}-2`,
@@ -37,6 +39,8 @@ export const mockCollectContent = async (platform: string, keyword?: string): Pr
       readCount: 6247,
       likeCount: 521,
       status: "pending" as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
   ]
 
