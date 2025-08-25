@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import "./globals.css"
 import { AppProvider } from "../src/contexts/AppContext"
 import { AppLayout } from "../src/components/layout/AppLayout"
+import { Toaster } from "sonner"
 
 export const metadata: Metadata = {
   title: "AI公众号内容管理系统",
@@ -22,6 +23,7 @@ export default function RootLayout({
       <body className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
         <AppProvider>
           <AppLayout>{children}</AppLayout>
+          <Toaster />
         </AppProvider>
       </body>
     </html>

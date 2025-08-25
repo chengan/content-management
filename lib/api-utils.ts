@@ -22,11 +22,13 @@ export function createSuccessResponse<T>(data: T, pagination?: ApiResponse<T>['p
 // 创建错误响应
 export function createErrorResponse(
   error: string | ApiError,
-  status: number = 400
+  status: number = 400,
+  details?: any
 ): NextResponse {
   const response: ApiResponse = {
     success: false,
-    error: typeof error === 'string' ? error : error.message
+    error: typeof error === 'string' ? error : error.message,
+    ...(details && { details })
   };
   
   return NextResponse.json(response, { status, headers: corsHeaders });

@@ -1,15 +1,22 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
-import type { AppState, Article, RewriteRecord, PublicationRecord, WeChatAccount, AppConfig } from "../types"
+import type { AppState, Article, RewriteRecord, PublicationRecord, WeChatAccount, AppConfig, CollectSource, CollectHistory, CollectStats } from "../types"
 import { mockAccounts, defaultConfig } from "../data/mock-data"
-import { materialsApi, handleApiResponse, ApiError } from "../../lib/api"
-import type { MaterialsQueryParams } from "../../lib/api-types"
+import { materialsApi, collectApi, handleApiResponse, ApiError } from "../../lib/api"
+import type { MaterialsQueryParams, CollectQueryParams, CollectHistoryQueryParams } from "../../lib/api-types"
 
 interface AppContextType extends AppState {
   // Loading and error states
   loading: boolean
   error: string | null
+  collectLoading: boolean
+  collectError: string | null
+
+  // Collect states
+  collectSources: CollectSource[]
+  collectHistory: CollectHistory[]
+  collectStats: CollectStats | null
 
   // Material operations
   fetchMaterials: (params?: MaterialsQueryParams) => Promise<void>
@@ -18,6 +25,13 @@ interface AppContextType extends AppState {
   deleteMaterial: (id: string) => Promise<void>
   batchDeleteMaterials: (ids: string[]) => Promise<void>
   batchUpdateMaterialsStatus: (ids: string[], status: Article['status']) => Promise<void>
+
+  // Collect operations
+  fetchCollectSources: () => Promise<void>
+  fetchCollectHotlist: (params?: CollectQueryParams) => Promise<Article[]>
+  collectArticles: (articles: any[], options?: { skipDuplicates?: boolean; platform?: string }) => Promise<any>
+  fetchCollectHistory: (params?: CollectHistoryQueryParams) => Promise<void>
+  fetchCollectStats: () => Promise<void>
 
   // Rewrite operations
   addRewrite: (rewrite: RewriteRecord) => void
@@ -33,6 +47,7 @@ interface AppContextType extends AppState {
 
   // Utility methods
   clearError: () => void
+  clearCollectError: () => void
   refreshMaterials: () => Promise<void>
 }
 
@@ -48,6 +63,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Loading and error states
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  const [collectLoading, setCollectLoading] = useState<boolean>(false)
+  const [collectError, setCollectError] = useState<string | null>(null)
+
+  // Collect states
+  const [collectSources, setCollectSources] = useState<CollectSource[]>([])
+  const [collectHistory, setCollectHistory] = useState<CollectHistory[]>([])
+  const [collectStats, setCollectStats] = useState<CollectStats | null>(null)
 
   // Helper function to handle API errors
   const handleError = useCallback((error: any) => {
@@ -61,9 +83,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Helper function to handle collect API errors
+  const handleCollectError = useCallback((error: any) => {
+    console.error('Collect API Error:', error)
+    if (error instanceof ApiError) {
+      setCollectError(error.message)
+    } else if (error instanceof Error) {
+      setCollectError(error.message)
+    } else {
+      setCollectError('采集操作发生未知错误')
+    }
+  }, [])
+
   // Clear error state
   const clearError = useCallback(() => {
     setError(null)
+  }, [])
+
+  // Clear collect error state
+  const clearCollectError = useCallback(() => {
+    setCollectError(null)
   }, [])
 
   // Fetch materials from API
@@ -175,10 +214,106 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [handleError, fetchMaterials])
 
-  // Load materials on component mount
+  // === Collect Operations ===
+
+  // Fetch collect sources
+  const fetchCollectSources = useCallback(async () => {
+    setCollectLoading(true)
+    setCollectError(null)
+    
+    try {
+      const response = await collectApi.getSources()
+      const data = handleApiResponse(response)
+      setCollectSources(data)
+    } catch (error) {
+      handleCollectError(error)
+    } finally {
+      setCollectLoading(false)
+    }
+  }, [handleCollectError])
+
+  // Fetch hotlist content
+  const fetchCollectHotlist = useCallback(async (params?: CollectQueryParams): Promise<Article[]> => {
+    setCollectLoading(true)
+    setCollectError(null)
+    
+    try {
+      const response = await collectApi.getHotlist(params)
+      const data = handleApiResponse(response)
+      return data
+    } catch (error) {
+      handleCollectError(error)
+      return []
+    } finally {
+      setCollectLoading(false)
+    }
+  }, [handleCollectError])
+
+  // Collect articles to materials library
+  const collectArticles = useCallback(async (articles: any[], options?: { skipDuplicates?: boolean; platform?: string }) => {
+    setCollectLoading(true)
+    setCollectError(null)
+    
+    try {
+      const response = await collectApi.collectArticles(articles, options)
+      const data = handleApiResponse(response)
+      
+      // Refresh materials to show newly collected articles
+      if (data.collected > 0) {
+        await fetchMaterials()
+      }
+      
+      return data
+    } catch (error) {
+      handleCollectError(error)
+      throw error
+    } finally {
+      setCollectLoading(false)
+    }
+  }, [handleCollectError, fetchMaterials])
+
+  // Fetch collect history
+  const fetchCollectHistory = useCallback(async (params?: CollectHistoryQueryParams) => {
+    setCollectLoading(true)
+    setCollectError(null)
+    
+    try {
+      const response = await collectApi.getHistory(params)
+      const data = handleApiResponse(response)
+      setCollectHistory(data.history || [])
+      if (data.stats) {
+        setCollectStats(data.stats)
+      }
+    } catch (error) {
+      handleCollectError(error)
+    } finally {
+      setCollectLoading(false)
+    }
+  }, [handleCollectError])
+
+  // Fetch collect stats
+  const fetchCollectStats = useCallback(async () => {
+    setCollectLoading(true)
+    setCollectError(null)
+    
+    try {
+      const response = await collectApi.getStats()
+      const data = handleApiResponse(response)
+      if (data.stats) {
+        setCollectStats(data.stats)
+      }
+    } catch (error) {
+      handleCollectError(error)
+    } finally {
+      setCollectLoading(false)
+    }
+  }, [handleCollectError])
+
+  // Load materials and collect sources on component mount
   useEffect(() => {
     fetchMaterials()
-  }, [fetchMaterials])
+    fetchCollectSources()
+  }, [fetchMaterials, fetchCollectSources])
 
   const addRewrite = (rewrite: RewriteRecord) => {
     setRewrites((prev) => [...prev, rewrite])
@@ -204,17 +339,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     config,
     loading,
     error,
+    collectLoading,
+    collectError,
+    collectSources,
+    collectHistory,
+    collectStats,
     fetchMaterials,
     addMaterials,
     updateMaterial,
     deleteMaterial,
     batchDeleteMaterials,
     batchUpdateMaterialsStatus,
+    fetchCollectSources,
+    fetchCollectHotlist,
+    collectArticles,
+    fetchCollectHistory,
+    fetchCollectStats,
     addRewrite,
     addPublication,
     updateAccount,
     updateConfig,
     clearError,
+    clearCollectError,
     refreshMaterials,
   }
 

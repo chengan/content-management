@@ -1,4 +1,12 @@
-import { Article } from '@/src/types';
+import { 
+  Article, 
+  CollectSource, 
+  CollectHistory, 
+  CollectStats, 
+  CollectResult, 
+  CollectBatch, 
+  CollectOperationResult 
+} from '@/src/types';
 import { ApiResponse, MaterialsQueryParams, BatchOperation } from './api-types';
 
 // API基础配置 - 使用相对路径避免跨域问题
@@ -34,7 +42,36 @@ class ApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        // 尝试解析错误响应体
+        let errorData: any = null;
+        try {
+          errorData = await response.json();
+          console.log(`[API Error ${response.status}] Response data:`, errorData);
+        } catch (parseError) {
+          console.error('Failed to parse error response:', parseError);
+          // 如果无法解析响应体，使用默认错误信息
+          throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        }
+        
+        // 创建详细的错误对象
+        const error = new Error(errorData.error || errorData.message || `API request failed: ${response.status} ${response.statusText}`);
+        (error as any).status = response.status;
+        
+        // 确保错误详细信息被正确设置
+        if (errorData.details) {
+          (error as any).details = errorData.details;
+        } else if (errorData.success === false) {
+          // 如果是标准的API响应格式，将整个errorData作为details
+          (error as any).details = errorData;
+        }
+        
+        console.log('Constructed error object:', {
+          message: error.message,
+          status: (error as any).status,
+          details: (error as any).details
+        });
+        
+        throw error;
       }
 
       const data = await response.json();
@@ -150,6 +187,160 @@ export const materialsApi = {
     ids,
     data: { status },
   }),
+};
+
+// === 新的采集相关API方法 ===
+
+// 采集相关查询参数类型
+export interface CollectSourcesQueryParams {
+  platform?: string;
+  isActive?: boolean;
+}
+
+export interface CollectExecuteRequest {
+  sourceIds: string[];
+  collectType: 'keyword' | 'full';
+  keyword?: string;
+  name?: string;
+  description?: string;
+  limit?: number;
+}
+
+export interface CollectResultsQueryParams {
+  batchId?: string;
+  page?: number;
+  limit?: number;
+  onlySelected?: boolean;
+}
+
+export interface CollectBatchesQueryParams {
+  page?: number;
+  limit?: number;
+  status?: string;
+}
+
+export interface CollectHistoryQueryParams {
+  page?: number;
+  limit?: number;
+  sourceId?: string;
+  platform?: string;
+  range?: 'today' | 'week' | 'month';
+  startDate?: string;
+  endDate?: string;
+  includeStats?: boolean;
+}
+
+// 扩展API客户端，添加新的采集方法
+class ExtendedApiClient extends ApiClient {
+  
+  // === 采集源管理 ===
+  
+  // 获取采集源列表
+  async getCollectSources(params: CollectSourcesQueryParams = {}): Promise<ApiResponse<CollectSource[]>> {
+    return this.get<CollectSource[]>('/collect/sources', params);
+  }
+
+  // 创建采集源
+  async createCollectSource(source: Omit<CollectSource, 'id' | 'createdAt'>): Promise<ApiResponse<CollectSource>> {
+    return this.post<CollectSource>('/collect/sources', source);
+  }
+
+  // 更新采集源
+  async updateCollectSource(id: string, updates: Partial<CollectSource>): Promise<ApiResponse<CollectSource>> {
+    return this.put<CollectSource>(`/collect/sources?id=${id}`, updates);
+  }
+
+  // 删除采集源
+  async deleteCollectSource(id: string, options: {
+    cascade?: boolean
+  } = {}): Promise<ApiResponse<void>> {
+    const params = new URLSearchParams({ id });
+    if (options.cascade) {
+      params.set('cascade', 'true');
+    }
+    return this.delete<void>(`/collect/sources?${params.toString()}`);
+  }
+  
+  // === 采集执行 ===
+  
+  // 执行采集任务
+  async executeCollect(request: CollectExecuteRequest): Promise<ApiResponse<CollectOperationResult>> {
+    return this.post<CollectOperationResult>('/collect/execute', request);
+  }
+  
+  // === 采集结果管理 ===
+  
+  // 获取采集结果列表
+  async getCollectResults(params: CollectResultsQueryParams = {}): Promise<ApiResponse<CollectResult[]>> {
+    return this.get<CollectResult[]>('/collect/results', params);
+  }
+
+  // 批量更新采集结果选中状态
+  async updateCollectResultSelection(ids: string[], isSelected: boolean): Promise<ApiResponse<void>> {
+    return this.put<void>('/collect/results', { ids, isSelected });
+  }
+
+  // 批量删除采集结果
+  async deleteCollectResults(ids: string[]): Promise<ApiResponse<void>> {
+    return this.request<void>('/collect/results', {
+      method: 'DELETE',
+      body: JSON.stringify({ ids }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // 将采集结果添加到素材库
+  async addCollectResultsToMaterials(resultIds: string[]): Promise<ApiResponse<{ added: number; skipped: number }>> {
+    return this.post<{ added: number; skipped: number }>('/collect/add-to-materials', { resultIds });
+  }
+  
+  // === 采集批次管理 ===
+  
+  // 获取采集批次列表
+  async getCollectBatches(params: CollectBatchesQueryParams = {}): Promise<ApiResponse<CollectBatch[]>> {
+    return this.get<CollectBatch[]>('/collect/batches', params);
+  }
+  
+  // === 采集历史 ===
+  
+  // 获取采集历史
+  async getCollectHistory(params: CollectHistoryQueryParams = {}): Promise<ApiResponse<{
+    history: CollectHistory[];
+    pagination: any;
+    filters: any;
+    summary: any;
+    stats?: CollectStats;
+  }>> {
+    return this.get('/collect/history', params);
+  }
+}
+
+// 创建扩展的API客户端实例
+const extendedApiClient = new ExtendedApiClient();
+
+// 导出采集相关API方法
+export const collectApi = {
+  // === 采集源管理 ===
+  getSources: (params?: CollectSourcesQueryParams) => extendedApiClient.getCollectSources(params),
+  createSource: (source: Omit<CollectSource, 'id' | 'createdAt'>) => extendedApiClient.createCollectSource(source),
+  updateSource: (id: string, updates: Partial<CollectSource>) => extendedApiClient.updateCollectSource(id, updates),
+  deleteSource: (id: string, options?: { cascade?: boolean }) => extendedApiClient.deleteCollectSource(id, options),
+  
+  // === 采集执行 ===
+  execute: (request: CollectExecuteRequest) => extendedApiClient.executeCollect(request),
+  
+  // === 采集结果管理 ===
+  getResults: (params?: CollectResultsQueryParams) => extendedApiClient.getCollectResults(params),
+  updateResultSelection: (ids: string[], isSelected: boolean) => extendedApiClient.updateCollectResultSelection(ids, isSelected),
+  deleteResults: (ids: string[]) => extendedApiClient.deleteCollectResults(ids),
+  addToMaterials: (resultIds: string[]) => extendedApiClient.addCollectResultsToMaterials(resultIds),
+  
+  // === 批次管理 ===
+  getBatches: (params?: CollectBatchesQueryParams) => extendedApiClient.getCollectBatches(params),
+  
+  // === 采集历史 ===
+  getHistory: (params?: CollectHistoryQueryParams) => extendedApiClient.getCollectHistory(params),
+  getStats: () => extendedApiClient.getCollectHistory({ includeStats: true, limit: 1 }),
 };
 
 // 全局错误处理器

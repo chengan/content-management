@@ -25,6 +25,12 @@ pnpm lint
 npx tsc --noEmit
 ```
 
+### API测试
+```bash
+# 测试今日热榜API连接
+curl -X GET "http://localhost:3000/api/test-tophub"
+```
+
 ### 重要提醒
 - 该项目的 next.config.mjs 配置了忽略构建错误和ESLint错误，这是不推荐的配置
 - 建议在实际开发中移除 `ignoreDuringBuilds: true` 和 `ignoreBuildErrors: true` 配置
@@ -38,15 +44,30 @@ npx tsc --noEmit
 - **样式**: Tailwind CSS 4 + shadcn/ui组件库
 - **类型**: TypeScript
 - **包管理**: pnpm
+- **后端服务**: Supabase (数据存储和API)
+- **字体系统**: Geist Sans & Geist Mono
+- **第三方服务**: 今日热榜API (内容采集)、Axios (HTTP客户端)、Sonner (Toast通知)
 
 ### 目录结构
 - `/app/` - Next.js App Router页面和布局
+  - `/api/materials/` - 素材管理API路由
+  - `/api/collect/` - 内容采集API路由
+  - `/api/test-tophub/` - 今日热榜API测试路由
 - `/src/components/` - 业务组件
 - `/src/contexts/` - React Context状态管理
 - `/src/types/` - TypeScript类型定义
-- `/src/data/` - 模拟数据和API
+- `/src/data/` - 模拟数据
+- `/src/hooks/` - 自定义React Hooks
+- `/src/utils/` - 工具函数
 - `/components/ui/` - shadcn/ui基础组件
-- `/lib/` - 工具函数
+- `/lib/` - 核心库文件
+  - `api.ts` - API客户端
+  - `supabase.ts` - Supabase服务封装
+  - `api-utils.ts` - API工具函数
+  - `tophub.ts` - 今日热榜API封装
+  - `api-types.ts` - API类型定义
+  - `validation.ts` - 数据验证工具
+- `/.docs/` - 项目文档和操作教程
 
 ### 核心功能模块
 1. **内容采集** (`/collect`) - 从各平台采集内容
@@ -59,6 +80,8 @@ npx tsc --noEmit
 ### 状态管理
 - 使用React Context (`AppContext`) 进行全局状态管理
 - 主要状态: 素材(materials)、改写记录(rewrites)、发布记录(publications)、账号(accounts)、配置(config)
+- 集成API调用和本地状态同步，支持乐观更新和错误回滚
+- 批量操作支持: 批量删除、批量状态更新
 
 ### 组件规范
 - 使用shadcn/ui组件系统，配置在components.json中
@@ -85,8 +108,69 @@ npx tsc --noEmit
 "@/*": ["./*"]  // 项目根目录映射
 ```
 
+## 环境配置
+
+### 必需的环境变量
+创建 `.env.local` 文件并配置：
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+TOPHUB_ACCESS_KEY=your_tophub_access_key
+```
+
+### 数据库结构
+项目依赖Supabase的`articles`表：
+- 数据库字段使用snake_case（如：source_url, collect_time）
+- 前端字段使用camelCase（如：sourceUrl, collectTime）
+- 转换函数在`/lib/supabase.ts`中定义
+
+## API架构
+
+### 三层架构
+1. **API路由层** (`/app/api/materials/`, `/app/api/collect/`) - 处理HTTP请求和参数验证
+2. **API客户端层** (`/lib/api.ts`) - 封装fetch请求，统一错误处理
+3. **Supabase服务层** (`/lib/supabase.ts`) - 数据库操作封装
+
+### API调用规范
+- 所有API调用通过`materialsApi`和`collectApi`对象
+- 使用`handleApiResponse`处理响应
+- 错误使用`ApiError`类抛出
+- 支持批量操作和分页查询
+
+### 今日热榜集成
+- **TophubService类** (`/lib/tophub.ts`) - 封装今日热榜API调用
+- 支持获取榜单列表、榜单详情、内容搜索
+- 内置错误处理和连接测试功能
+- 微信公众号热文榜快速访问方法
+
+## UI/UX特性
+
+### 响应式设计
+- 移动端：底部导航栏
+- 桌面端：侧边导航栏
+- 支持列表视图和网格视图切换
+
+### 批量操作
+- 多选功能支持批量删除和状态更新
+- 乐观更新：先更新UI，失败后自动回滚
+
 ### 开发注意事项
 - 项目使用pnpm作为包管理器
 - TypeScript严格模式已启用
 - 图片优化在next.config.mjs中被禁用 (`unoptimized: true`)
 - 使用Geist字体（San和Mono变体）
+- Article的status字段只有三种状态：pending、rewritten、published
+- 时间字段统一使用ISO字符串格式
+
+### 采集功能开发要点
+- 采集源配置支持多平台（微信、知乎、今日热榜等）
+- 批量采集和实时进度跟踪
+- 采集结果去重和筛选机制
+- 支持关键词搜索和全量采集两种模式
+- 采集数据自动同步到素材库
+
+### 错误处理规范
+- API层统一使用`ApiError`类抛出错误
+- 前端使用Sonner进行错误提示
+- 网络请求超时设置为10秒（今日热榜API）
+- 支持乐观更新和错误回滚机制
