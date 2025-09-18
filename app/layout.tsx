@@ -20,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
+      <body className={`${GeistSans.variable} ${GeistMono.variable}`}>
         <AppProvider>
           <AppLayout>{children}</AppLayout>
           <Toaster />

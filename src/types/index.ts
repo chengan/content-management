@@ -12,6 +12,10 @@ export interface Article {
   readCount: number
   likeCount: number
   status: "pending" | "rewritten" | "published"
+  // 新增内容获取相关字段
+  contentStatus?: "pending" | "fetching" | "completed" | "failed"
+  fetchAttempts?: number
+  lastFetchAttempt?: string
   createdAt: string
   updatedAt: string
 }

@@ -12,6 +12,18 @@ import {
   DatabaseCollectBatch
 } from '../src/types'
 
+// 导入改写相关类型
+import {
+  RewriteRecord,
+  RewriteSegment,
+  BatchRewriteTask,
+  RewriteConfig,
+  DatabaseRewriteRecord,
+  DatabaseRewriteSegment,
+  DatabaseBatchRewriteTask,
+  DatabaseRewriteConfig
+} from '../src/types/rewrite'
+
 // 环境变量检查
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -43,6 +55,10 @@ export interface DatabaseArticle {
   read_count: number
   like_count: number
   status: 'pending' | 'rewritten' | 'published'
+  // 新增内容获取相关字段
+  content_status?: 'pending' | 'fetching' | 'completed' | 'failed' | null
+  fetch_attempts?: number | null
+  last_fetch_attempt?: string | null
   created_at: string
   updated_at: string
 }
@@ -63,6 +79,10 @@ export function dbArticleToArticle(dbArticle: DatabaseArticle): Article {
     readCount: dbArticle.read_count,
     likeCount: dbArticle.like_count,
     status: dbArticle.status,
+    // 新增内容获取状态字段
+    contentStatus: dbArticle.content_status || 'pending',
+    fetchAttempts: dbArticle.fetch_attempts || 0,
+    lastFetchAttempt: dbArticle.last_fetch_attempt || undefined,
     createdAt: dbArticle.created_at,
     updatedAt: dbArticle.updated_at
   }
@@ -135,6 +155,10 @@ export function articleToDbArticle(article: Partial<Article>): Partial<DatabaseA
     read_count: article.readCount,
     like_count: article.likeCount,
     status: article.status,
+    // 新增内容获取状态字段
+    content_status: article.contentStatus || null,
+    fetch_attempts: article.fetchAttempts || null,
+    last_fetch_attempt: article.lastFetchAttempt || null,
     updated_at: new Date().toISOString()
   }
 }
@@ -830,6 +854,193 @@ export class SupabaseService {
     }
   }
 
+  // ==================== 内容获取方法 ====================
+  
+  /**
+   * 获取需要获取内容的文章列表
+   * @param limit 限制数量，默认10条
+   */
+  static async getArticlesNeedingContent(limit: number = 10): Promise<Article[]> {
+    try {
+      const { data, error } = await supabase
+        .from('articles')
+        .select('*')
+        .or('content_status.is.null,content_status.eq.pending,content_status.eq.failed')
+        .not('source_url', 'is', null)
+        .neq('source_url', '')
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+      if (error) {
+        console.error('获取需要内容获取的文章失败:', error)
+        throw new Error(`获取需要内容获取的文章失败: ${error.message}`)
+      }
+
+      return data ? data.map(dbArticleToArticle) : []
+
+    } catch (error) {
+      console.error('getArticlesNeedingContent error:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 更新文章内容获取状态
+   */
+  static async updateArticleContentStatus(
+    id: string, 
+    status: 'pending' | 'fetching' | 'completed' | 'failed',
+    content?: string,
+    incrementAttempts: boolean = false
+  ): Promise<Article> {
+    try {
+      const updates: any = {
+        content_status: status,
+        last_fetch_attempt: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+
+      if (content) {
+        updates.content = content
+      }
+
+      if (incrementAttempts) {
+        // 先获取当前尝试次数
+        const { data: current } = await supabase
+          .from('articles')
+          .select('fetch_attempts')
+          .eq('id', id)
+          .single()
+
+        updates.fetch_attempts = (current?.fetch_attempts || 0) + 1
+      }
+
+      const { data, error } = await supabase
+        .from('articles')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('更新文章内容状态失败:', error)
+        throw new Error(`更新文章内容状态失败: ${error.message}`)
+      }
+
+      return dbArticleToArticle(data)
+
+    } catch (error) {
+      console.error('updateArticleContentStatus error:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 批量更新文章内容状态为"需要获取内容"
+   * @param articleIds 文章ID数组
+   */
+  static async markArticlesForContentFetch(articleIds: string[]): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('articles')
+        .update({
+          content_status: 'pending',
+          fetch_attempts: 0,
+          last_fetch_attempt: null,
+          updated_at: new Date().toISOString()
+        })
+        .in('id', articleIds)
+
+      if (error) {
+        console.error('标记文章需要获取内容失败:', error)
+        throw new Error(`标记文章需要获取内容失败: ${error.message}`)
+      }
+
+      console.log(`✅ 已标记 ${articleIds.length} 篇文章需要获取内容`)
+
+    } catch (error) {
+      console.error('markArticlesForContentFetch error:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 获取内容获取统计信息
+   */
+  static async getContentFetchStats(): Promise<{
+    pending: number;
+    fetching: number;
+    completed: number;
+    failed: number;
+    total: number;
+  }> {
+    try {
+      const { data, error } = await supabase
+        .from('articles')
+        .select('content_status')
+        .not('source_url', 'is', null)
+        .neq('source_url', '')
+
+      if (error) {
+        console.error('获取内容获取统计失败:', error)
+        throw new Error(`获取内容获取统计失败: ${error.message}`)
+      }
+
+      const stats = {
+        pending: 0,
+        fetching: 0,
+        completed: 0,
+        failed: 0,
+        total: data?.length || 0
+      }
+
+      data?.forEach(item => {
+        const status = item.content_status || 'pending'
+        stats[status as keyof typeof stats]++
+      })
+
+      return stats
+
+    } catch (error) {
+      console.error('getContentFetchStats error:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 触发自动内容获取服务
+   * 异步启动批量内容获取处理
+   */
+  static async triggerAutoContentFetch(): Promise<void> {
+    try {
+      // 发送请求到批量处理API，处理所有文章
+      const response = await fetch('http://localhost:3000/api/content/batch-process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          limit: 5,              // 每批处理5篇文章
+          maxAttempts: 3,        // 最大尝试3次
+          delayBetweenRequests: 4000,  // 4秒间隔（稍长以提高成功率）
+          processAll: true       // 处理所有待获取的文章
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`🚀 自动内容获取已触发: ${result.data?.processed || 0} 篇文章开始处理`);
+        console.log(`📊 处理结果: 成功 ${result.data?.successful || 0} 篇，失败 ${result.data?.failed || 0} 篇`);
+      } else {
+        console.error('触发自动内容获取失败:', response.statusText);
+      }
+
+    } catch (error) {
+      console.error('triggerAutoContentFetch error:', error);
+      throw error;
+    }
+  }
+
   // ==================== 采集批次管理方法 ====================
 
   /**
@@ -1167,20 +1378,29 @@ export class SupabaseService {
       }
 
       // 转换为文章格式并插入到articles表
-      const articles = results.map(result => ({
-        title: result.title,
-        content: result.content || '',
-        source: result.source,
-        source_url: result.source_url,
-        author: result.author,
-        publish_time: result.publish_time,
-        collect_time: result.collect_time,
-        tags: result.tags,
-        category: result.category,
-        read_count: result.read_count,
-        like_count: result.like_count,
-        status: 'pending' as const
-      }))
+      const articles = results.map(result => {
+        const hasUrl = result.source_url && result.source_url.trim() !== '';
+        const hasMinimalContent = result.content && result.content.length > 50;
+        
+        return {
+          title: result.title,
+          content: result.content || '',
+          source: result.source,
+          source_url: result.source_url,
+          author: result.author,
+          publish_time: result.publish_time,
+          collect_time: result.collect_time,
+          tags: result.tags,
+          category: result.category,
+          read_count: result.read_count,
+          like_count: result.like_count,
+          status: 'pending' as const,
+          // 新增：自动设置内容获取状态
+          content_status: (hasUrl && !hasMinimalContent) ? 'pending' : 'completed',
+          fetch_attempts: 0,
+          last_fetch_attempt: null
+        }
+      })
 
       const { data: insertedArticles, error: insertError } = await supabase
         .from('articles')
@@ -1204,6 +1424,18 @@ export class SupabaseService {
       if (updateError) {
         console.error('更新采集结果状态失败:', updateError)
         // 这里不抛出错误，因为文章已经添加成功了
+      }
+
+      // 统计需要获取内容的文章数量
+      const articlesNeedingContent = articles.filter(article => article.content_status === 'pending').length;
+      
+      if (articlesNeedingContent > 0) {
+        console.log(`📥 已添加 ${articlesNeedingContent} 篇文章需要获取内容，将启动自动处理...`);
+        
+        // 异步启动自动内容获取服务（不等待结果）
+        this.triggerAutoContentFetch().catch(error => {
+          console.error('启动自动内容获取失败:', error);
+        });
       }
 
       return { 
@@ -1238,6 +1470,150 @@ export class SupabaseService {
       console.error('deleteCollectResults error:', error)
       throw error
     }
+  }
+}
+
+// ==================== 改写相关数据转换函数 ====================
+
+// 改写记录：数据库格式 -> 前端格式
+export function dbRewriteRecordToRewriteRecord(dbRecord: DatabaseRewriteRecord): RewriteRecord {
+  return {
+    id: dbRecord.id,
+    articleId: dbRecord.article_id,
+    originalTitle: dbRecord.original_title,
+    rewrittenTitle: dbRecord.rewritten_title,
+    originalContent: dbRecord.original_content,
+    rewrittenContent: dbRecord.rewritten_content,
+    style: dbRecord.style as any,
+    customPrompt: dbRecord.custom_prompt,
+    segments: dbRecord.segments || [],
+    segmentStrategy: (dbRecord.segment_strategy as any) || 'semantic',
+    rewriteMethod: (dbRecord.rewrite_method as any) || 'segmented',
+    qualityScore: dbRecord.quality_score,
+    styleConsistency: dbRecord.style_consistency,
+    contentCompleteness: dbRecord.content_completeness,
+    readability: dbRecord.readability,
+    aiModel: dbRecord.ai_model,
+    processingTime: dbRecord.processing_time,
+    createdAt: dbRecord.created_at,
+    updatedAt: dbRecord.updated_at
+  }
+}
+
+// 改写记录：前端格式 -> 数据库格式
+export function rewriteRecordToDbRewriteRecord(record: Partial<RewriteRecord>): Partial<DatabaseRewriteRecord> {
+  return {
+    article_id: record.articleId,
+    original_title: record.originalTitle,
+    rewritten_title: record.rewrittenTitle,
+    original_content: record.originalContent,
+    rewritten_content: record.rewrittenContent,
+    style: record.style,
+    custom_prompt: record.customPrompt,
+    segments: record.segments ? JSON.stringify(record.segments) : undefined,
+    segment_strategy: record.segmentStrategy,
+    rewrite_method: record.rewriteMethod,
+    quality_score: record.qualityScore,
+    style_consistency: record.styleConsistency,
+    content_completeness: record.contentCompleteness,
+    readability: record.readability,
+    ai_model: record.aiModel,
+    processing_time: record.processingTime,
+    updated_at: new Date().toISOString()
+  }
+}
+
+// 改写段落：数据库格式 -> 前端格式
+export function dbRewriteSegmentToRewriteSegment(dbSegment: DatabaseRewriteSegment): RewriteSegment {
+  return {
+    id: dbSegment.id,
+    rewriteRecordId: dbSegment.rewrite_record_id,
+    segmentOrder: dbSegment.segment_order,
+    originalContent: dbSegment.original_content,
+    rewrittenContent: dbSegment.rewritten_content,
+    segmentType: (dbSegment.segment_type as any) || 'paragraph',
+    qualityScore: dbSegment.quality_score,
+    processingTime: dbSegment.processing_time,
+    retryCount: dbSegment.retry_count || 0,
+    metadata: dbSegment.metadata || {},
+    createdAt: dbSegment.created_at
+  }
+}
+
+// 改写段落：前端格式 -> 数据库格式
+export function rewriteSegmentToDbRewriteSegment(segment: Partial<RewriteSegment>): Partial<DatabaseRewriteSegment> {
+  return {
+    rewrite_record_id: segment.rewriteRecordId,
+    segment_order: segment.segmentOrder,
+    original_content: segment.originalContent,
+    rewritten_content: segment.rewrittenContent,
+    segment_type: segment.segmentType,
+    quality_score: segment.qualityScore,
+    processing_time: segment.processingTime,
+    retry_count: segment.retryCount,
+    metadata: segment.metadata || {}
+  }
+}
+
+// 批量任务：数据库格式 -> 前端格式
+export function dbBatchRewriteTaskToBatchRewriteTask(dbTask: DatabaseBatchRewriteTask): BatchRewriteTask {
+  return {
+    id: dbTask.id,
+    name: dbTask.name,
+    articleIds: dbTask.article_ids || [],
+    style: dbTask.style as any,
+    customPrompt: dbTask.custom_prompt,
+    status: dbTask.status as any,
+    totalArticles: dbTask.total_articles,
+    completedArticles: dbTask.completed_articles,
+    failedArticles: dbTask.failed_articles,
+    config: dbTask.config || {},
+    startedAt: dbTask.started_at || undefined,
+    completedAt: dbTask.completed_at || undefined,
+    createdAt: dbTask.created_at,
+    errorMessage: dbTask.error_message
+  }
+}
+
+// 批量任务：前端格式 -> 数据库格式
+export function batchRewriteTaskToDbBatchRewriteTask(task: Partial<BatchRewriteTask>): Partial<DatabaseBatchRewriteTask> {
+  return {
+    name: task.name,
+    article_ids: task.articleIds || [],
+    style: task.style,
+    custom_prompt: task.customPrompt,
+    status: task.status,
+    total_articles: task.totalArticles,
+    completed_articles: task.completedArticles,
+    failed_articles: task.failedArticles,
+    config: task.config || {},
+    started_at: task.startedAt,
+    completed_at: task.completedAt,
+    error_message: task.errorMessage
+  }
+}
+
+// 改写配置：数据库格式 -> 前端格式
+export function dbRewriteConfigToRewriteConfig(dbConfig: DatabaseRewriteConfig): RewriteConfig {
+  return {
+    id: dbConfig.id,
+    configKey: dbConfig.config_key,
+    configValue: dbConfig.config_value,
+    description: dbConfig.description,
+    isActive: dbConfig.is_active,
+    createdAt: dbConfig.created_at,
+    updatedAt: dbConfig.updated_at
+  }
+}
+
+// 改写配置：前端格式 -> 数据库格式
+export function rewriteConfigToDbRewriteConfig(config: Partial<RewriteConfig>): Partial<DatabaseRewriteConfig> {
+  return {
+    config_key: config.configKey,
+    config_value: config.configValue,
+    description: config.description,
+    is_active: config.isActive,
+    updated_at: new Date().toISOString()
   }
 }
 

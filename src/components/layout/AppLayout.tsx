@@ -45,9 +45,13 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
+  console.log('🏗️ AppLayout 组件初始化')
+  
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
   const pathname = usePathname()
+  
+  console.log('🔍 当前路径:', pathname)
 
   const toggleDarkMode = () => {
     setDarkMode(!darkMode)

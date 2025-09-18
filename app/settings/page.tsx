@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Settings, Key, Users, Zap, CheckCircle, XCircle, Plus } from "lucide-react"
+import { Settings, Key, Users, Zap, CheckCircle, XCircle, Plus, Bot, Sparkles, TestTube } from "lucide-react"
 
 export default function SettingsPage() {
   const { config, accounts, updateConfig, updateAccount } = useApp()
@@ -21,6 +21,12 @@ export default function SettingsPage() {
   const [autoRewrite, setAutoRewrite] = useState(config.autoRewrite)
   const [autoPublish, setAutoPublish] = useState(config.autoPublish)
 
+  // OpenRouter配置状态
+  const [openRouterApiKey, setOpenRouterApiKey] = useState("")
+  const [cleanModel, setCleanModel] = useState("mistralai/mistral-7b-instruct:free")
+  const [autoClean, setAutoClean] = useState(true)
+  const [testingConnection, setTestingConnection] = useState(false)
+
   const handleSaveConfig = () => {
     updateConfig({
       aiApiKey: apiKey,
@@ -29,6 +35,84 @@ export default function SettingsPage() {
       autoRewrite,
       autoPublish,
     })
+  }
+
+  // 保存OpenRouter配置
+  const handleSaveOpenRouterConfig = async () => {
+    try {
+      // 保存API Key
+      await fetch('/api/rewrite/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'openrouter_api_key',
+          value: openRouterApiKey,
+          description: 'OpenRouter API密钥，用于内容清理',
+          dataType: 'string'
+        })
+      });
+
+      // 保存清理模型
+      await fetch('/api/rewrite/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'content_clean_model',
+          value: cleanModel,
+          description: '内容清理使用的AI模型',
+          dataType: 'string'
+        })
+      });
+
+      // 保存自动清理设置
+      await fetch('/api/rewrite/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'auto_content_clean',
+          value: autoClean,
+          description: '是否启用自动内容清理',
+          dataType: 'boolean'
+        })
+      });
+
+      alert('OpenRouter配置保存成功！');
+    } catch (error) {
+      console.error('保存OpenRouter配置失败:', error);
+      alert('保存配置失败，请稍后重试');
+    }
+  }
+
+  // 测试OpenRouter连接
+  const handleTestConnection = async () => {
+    if (!openRouterApiKey.trim()) {
+      alert('请先输入OpenRouter API Key');
+      return;
+    }
+
+    setTestingConnection(true);
+    try {
+      const response = await fetch('/api/content/clean?action=test', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openRouterApiKey}` // 临时传递API Key用于测试
+        }
+      });
+
+      const result = await response.json();
+      
+      if (result.success && result.data.testResult) {
+        alert('✅ 连接测试成功！OpenRouter配置正常');
+      } else {
+        alert('❌ 连接测试失败，请检查API Key是否正确');
+      }
+    } catch (error) {
+      console.error('测试连接失败:', error);
+      alert('❌ 连接测试异常，请稍后重试');
+    } finally {
+      setTestingConnection(false);
+    }
   }
 
   const handleToggleAccount = (accountId: string) => {
@@ -48,8 +132,9 @@ export default function SettingsPage() {
         </div>
 
         <Tabs defaultValue="ai" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="ai">AI配置</TabsTrigger>
+            <TabsTrigger value="content">内容清理</TabsTrigger>
             <TabsTrigger value="accounts">账号管理</TabsTrigger>
             <TabsTrigger value="automation">自动化设置</TabsTrigger>
           </TabsList>
@@ -127,6 +212,141 @@ export default function SettingsPage() {
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                       <span className="text-sm text-green-600">运行中</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="content" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bot className="h-5 w-5" />
+                  内容清理配置
+                </CardTitle>
+                <CardDescription>配置OpenRouter AI模型，自动清理采集内容中的广告和推广信息</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="openRouterApiKey" className="text-sm font-medium mb-2 block">
+                    OpenRouter API Key
+                  </Label>
+                  <Input
+                    id="openRouterApiKey"
+                    type="password"
+                    placeholder="输入您的OpenRouter API密钥"
+                    value={openRouterApiKey}
+                    onChange={(e) => setOpenRouterApiKey(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    用于AI内容清理功能，支持免费和付费模型。
+                    <a 
+                      href="https://openrouter.ai/keys" 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="text-blue-600 hover:underline ml-1"
+                    >
+                      获取API Key
+                    </a>
+                  </p>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">清理模型选择</Label>
+                  <Select value={cleanModel} onValueChange={setCleanModel}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mistralai/mistral-7b-instruct:free">
+                        Mistral 7B (免费) - 推荐
+                      </SelectItem>
+                      <SelectItem value="openchat/openchat-7b:free">
+                        OpenChat 7B (免费) - 高质量
+                      </SelectItem>
+                      <SelectItem value="gryphe/mythomist-7b:free">
+                        MythoMist 7B (免费) - 创意写作
+                      </SelectItem>
+                      <SelectItem value="openai/gpt-3.5-turbo">
+                        GPT-3.5 Turbo (付费) - 最佳效果
+                      </SelectItem>
+                      <SelectItem value="anthropic/claude-3-haiku">
+                        Claude-3 Haiku (付费) - 快速经济
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    免费模型适合日常使用，付费模型效果更佳
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm font-medium">自动内容清理</Label>
+                    <p className="text-xs text-gray-500">在获取文章内容后自动进行AI清理</p>
+                  </div>
+                  <Switch checked={autoClean} onCheckedChange={setAutoClean} />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={handleTestConnection} 
+                    variant="outline" 
+                    disabled={testingConnection || !openRouterApiKey}
+                    className="flex-1"
+                  >
+                    {testingConnection ? (
+                      <>
+                        <TestTube className="h-4 w-4 mr-2 animate-spin" />
+                        测试中...
+                      </>
+                    ) : (
+                      <>
+                        <TestTube className="h-4 w-4 mr-2" />
+                        测试连接
+                      </>
+                    )}
+                  </Button>
+                  <Button onClick={handleSaveOpenRouterConfig} className="flex-1">
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    保存配置
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  清理服务状态
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">OpenRouter连接</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                      <span className="text-sm text-yellow-600">未测试</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">内容清理服务</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span className="text-sm text-green-600">就绪</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">自动清理功能</span>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 ${autoClean ? 'bg-green-500' : 'bg-gray-400'} rounded-full`}></div>
+                      <span className={`text-sm ${autoClean ? 'text-green-600' : 'text-gray-600'}`}>
+                        {autoClean ? '已启用' : '已禁用'}
+                      </span>
                     </div>
                   </div>
                 </div>

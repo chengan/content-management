@@ -2,6 +2,14 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 import type { AppState, Article, RewriteRecord, PublicationRecord, WeChatAccount, AppConfig, CollectSource, CollectHistory, CollectStats } from "../types"
+// 导入改写相关类型
+import type { 
+  RewriteRecord as NewRewriteRecord, 
+  BatchRewriteTask, 
+  RewriteConfig, 
+  RewriteStats, 
+  RewriteProgress 
+} from "../types/rewrite"
 import { mockAccounts, defaultConfig } from "../data/mock-data"
 import { materialsApi, collectApi, handleApiResponse, ApiError } from "../../lib/api"
 import type { MaterialsQueryParams, CollectQueryParams, CollectHistoryQueryParams } from "../../lib/api-types"
@@ -33,8 +41,42 @@ interface AppContextType extends AppState {
   fetchCollectHistory: (params?: CollectHistoryQueryParams) => Promise<void>
   fetchCollectStats: () => Promise<void>
 
+  // Rewrite states
+  rewriteLoading: boolean
+  rewriteError: string | null
+  rewriteRecords: NewRewriteRecord[]
+  batchRewriteTasks: BatchRewriteTask[]
+  rewriteConfigs: RewriteConfig[]
+  rewriteStats: RewriteStats | null
+  currentRewriteProgress: RewriteProgress | null
+
   // Rewrite operations
   addRewrite: (rewrite: RewriteRecord) => void
+  
+  // 新改写系统方法（为后续开发预留）
+  fetchRewriteRecords: (params?: any) => Promise<void>
+  createRewriteRecord: (record: Omit<NewRewriteRecord, 'id' | 'createdAt' | 'updatedAt'>) => Promise<NewRewriteRecord>
+  updateRewriteRecord: (id: string, updates: Partial<NewRewriteRecord>) => Promise<void>
+  deleteRewriteRecord: (id: string) => Promise<void>
+  
+  // 批量改写任务管理
+  fetchBatchRewriteTasks: () => Promise<void>
+  createBatchRewriteTask: (task: Omit<BatchRewriteTask, 'id' | 'createdAt'>) => Promise<BatchRewriteTask>
+  updateBatchRewriteTask: (id: string, updates: Partial<BatchRewriteTask>) => Promise<void>
+  cancelBatchRewriteTask: (id: string) => Promise<void>
+  
+  // 配置管理
+  fetchRewriteConfigs: () => Promise<void>
+  updateRewriteConfig: (key: string, value: any) => Promise<void>
+  
+  // 统计信息
+  fetchRewriteStats: () => Promise<void>
+  
+  // 实时进度
+  setRewriteProgress: (progress: RewriteProgress | null) => void
+  
+  // 错误处理
+  clearRewriteError: () => void
 
   // Publication operations
   addPublication: (publication: PublicationRecord) => void
@@ -54,11 +96,21 @@ interface AppContextType extends AppState {
 const AppContext = createContext<AppContextType | undefined>(undefined)
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  console.log('🚀 AppProvider 初始化开始')
+  
   const [materials, setMaterials] = useState<Article[]>([])
   const [rewrites, setRewrites] = useState<RewriteRecord[]>([])
   const [publications, setPublications] = useState<PublicationRecord[]>([])
   const [accounts, setAccounts] = useState<WeChatAccount[]>(mockAccounts)
   const [config, setConfig] = useState<AppConfig>(defaultConfig)
+  
+  console.log('📊 初始状态:', {
+    materials: materials.length,
+    rewrites: rewrites.length,
+    publications: publications.length,
+    accounts: accounts.length,
+    config: config ? 'loaded' : 'empty'
+  })
   
   // Loading and error states
   const [loading, setLoading] = useState<boolean>(false)
@@ -70,6 +122,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [collectSources, setCollectSources] = useState<CollectSource[]>([])
   const [collectHistory, setCollectHistory] = useState<CollectHistory[]>([])
   const [collectStats, setCollectStats] = useState<CollectStats | null>(null)
+
+  // 新改写系统状态
+  const [rewriteLoading, setRewriteLoading] = useState<boolean>(false)
+  const [rewriteError, setRewriteError] = useState<string | null>(null)
+  const [rewriteRecords, setRewriteRecords] = useState<NewRewriteRecord[]>([])
+  const [batchRewriteTasks, setBatchRewriteTasks] = useState<BatchRewriteTask[]>([])
+  const [rewriteConfigs, setRewriteConfigs] = useState<RewriteConfig[]>([])
+  const [rewriteStats, setRewriteStats] = useState<RewriteStats | null>(null)
+  const [currentRewriteProgress, setCurrentRewriteProgress] = useState<RewriteProgress | null>(null)
 
   // Helper function to handle API errors
   const handleError = useCallback((error: any) => {
@@ -107,14 +168,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Fetch materials from API
   const fetchMaterials = useCallback(async (params?: MaterialsQueryParams) => {
+    console.log('📥 开始获取素材数据...', params)
     setLoading(true)
     setError(null)
     
     try {
       const response = await materialsApi.getList(params)
       const data = handleApiResponse(response)
+      console.log('✅ 素材数据获取成功:', data.length, '条')
       setMaterials(data)
     } catch (error) {
+      console.error('❌ 素材数据获取失败:', error)
       handleError(error)
     } finally {
       setLoading(false)
@@ -319,6 +383,190 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRewrites((prev) => [...prev, rewrite])
   }
 
+  // ==================== 新改写系统方法（为后续开发预留） ====================
+  
+  // 改写记录管理
+  const fetchRewriteRecords = useCallback(async (params?: any) => {
+    setRewriteLoading(true)
+    setRewriteError(null)
+    try {
+      // TODO: 在第二阶段实现API调用
+      console.log('fetchRewriteRecords called with params:', params)
+      setRewriteRecords([])
+    } catch (error: any) {
+      setRewriteError(error.message || '获取改写记录失败')
+    } finally {
+      setRewriteLoading(false)
+    }
+  }, [])
+
+  const createRewriteRecord = useCallback(async (record: Omit<NewRewriteRecord, 'id' | 'createdAt' | 'updatedAt'>) => {
+    setRewriteLoading(true)
+    setRewriteError(null)
+    try {
+      // TODO: 在第二阶段实现API调用
+      console.log('createRewriteRecord called with record:', record)
+      const newRecord = { ...record, id: Date.now().toString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as NewRewriteRecord
+      setRewriteRecords(prev => [newRecord, ...prev])
+      return newRecord
+    } catch (error: any) {
+      setRewriteError(error.message || '创建改写记录失败')
+      throw error
+    } finally {
+      setRewriteLoading(false)
+    }
+  }, [])
+
+  const updateRewriteRecord = useCallback(async (id: string, updates: Partial<NewRewriteRecord>) => {
+    setRewriteLoading(true)
+    setRewriteError(null)
+    try {
+      // TODO: 在第二阶段实现API调用
+      console.log('updateRewriteRecord called with id:', id, 'updates:', updates)
+      setRewriteRecords(prev => prev.map(record => 
+        record.id === id ? { ...record, ...updates, updatedAt: new Date().toISOString() } : record
+      ))
+    } catch (error: any) {
+      setRewriteError(error.message || '更新改写记录失败')
+    } finally {
+      setRewriteLoading(false)
+    }
+  }, [])
+
+  const deleteRewriteRecord = useCallback(async (id: string) => {
+    setRewriteLoading(true)
+    setRewriteError(null)
+    try {
+      // TODO: 在第二阶段实现API调用
+      console.log('deleteRewriteRecord called with id:', id)
+      setRewriteRecords(prev => prev.filter(record => record.id !== id))
+    } catch (error: any) {
+      setRewriteError(error.message || '删除改写记录失败')
+    } finally {
+      setRewriteLoading(false)
+    }
+  }, [])
+
+  // 批量任务管理
+  const fetchBatchRewriteTasks = useCallback(async () => {
+    setRewriteLoading(true)
+    setRewriteError(null)
+    try {
+      // TODO: 在第二阶段实现API调用
+      console.log('fetchBatchRewriteTasks called')
+      setBatchRewriteTasks([])
+    } catch (error: any) {
+      setRewriteError(error.message || '获取批量任务失败')
+    } finally {
+      setRewriteLoading(false)
+    }
+  }, [])
+
+  const createBatchRewriteTask = useCallback(async (task: Omit<BatchRewriteTask, 'id' | 'createdAt'>) => {
+    setRewriteLoading(true)
+    setRewriteError(null)
+    try {
+      // TODO: 在第二阶段实现API调用
+      console.log('createBatchRewriteTask called with task:', task)
+      const newTask = { ...task, id: Date.now().toString(), createdAt: new Date().toISOString() } as BatchRewriteTask
+      setBatchRewriteTasks(prev => [newTask, ...prev])
+      return newTask
+    } catch (error: any) {
+      setRewriteError(error.message || '创建批量任务失败')
+      throw error
+    } finally {
+      setRewriteLoading(false)
+    }
+  }, [])
+
+  const updateBatchRewriteTask = useCallback(async (id: string, updates: Partial<BatchRewriteTask>) => {
+    setRewriteLoading(true)
+    setRewriteError(null)
+    try {
+      // TODO: 在第二阶段实现API调用
+      console.log('updateBatchRewriteTask called with id:', id, 'updates:', updates)
+      setBatchRewriteTasks(prev => prev.map(task => 
+        task.id === id ? { ...task, ...updates } : task
+      ))
+    } catch (error: any) {
+      setRewriteError(error.message || '更新批量任务失败')
+    } finally {
+      setRewriteLoading(false)
+    }
+  }, [])
+
+  const cancelBatchRewriteTask = useCallback(async (id: string) => {
+    setRewriteLoading(true)
+    setRewriteError(null)
+    try {
+      // TODO: 在第二阶段实现API调用
+      console.log('cancelBatchRewriteTask called with id:', id)
+      setBatchRewriteTasks(prev => prev.map(task => 
+        task.id === id ? { ...task, status: 'cancelled' as any } : task
+      ))
+    } catch (error: any) {
+      setRewriteError(error.message || '取消批量任务失败')
+    } finally {
+      setRewriteLoading(false)
+    }
+  }, [])
+
+  // 配置管理
+  const fetchRewriteConfigs = useCallback(async () => {
+    setRewriteLoading(true)
+    setRewriteError(null)
+    try {
+      // TODO: 在第二阶段实现API调用
+      console.log('fetchRewriteConfigs called')
+      setRewriteConfigs([])
+    } catch (error: any) {
+      setRewriteError(error.message || '获取改写配置失败')
+    } finally {
+      setRewriteLoading(false)
+    }
+  }, [])
+
+  const updateRewriteConfig = useCallback(async (key: string, value: any) => {
+    setRewriteLoading(true)
+    setRewriteError(null)
+    try {
+      // TODO: 在第二阶段实现API调用
+      console.log('updateRewriteConfig called with key:', key, 'value:', value)
+      setRewriteConfigs(prev => prev.map(config => 
+        config.configKey === key ? { ...config, configValue: value, updatedAt: new Date().toISOString() } : config
+      ))
+    } catch (error: any) {
+      setRewriteError(error.message || '更新配置失败')
+    } finally {
+      setRewriteLoading(false)
+    }
+  }, [])
+
+  // 统计信息
+  const fetchRewriteStats = useCallback(async () => {
+    setRewriteLoading(true)
+    setRewriteError(null)
+    try {
+      // TODO: 在第二阶段实现API调用
+      console.log('fetchRewriteStats called')
+      setRewriteStats(null)
+    } catch (error: any) {
+      setRewriteError(error.message || '获取统计信息失败')
+    } finally {
+      setRewriteLoading(false)
+    }
+  }, [])
+
+  // 实时进度管理
+  const setRewriteProgress = useCallback((progress: RewriteProgress | null) => {
+    setCurrentRewriteProgress(progress)
+  }, [])
+
+  // 错误处理
+  const clearRewriteError = useCallback(() => {
+    setRewriteError(null)
+  }, [])
+
   const addPublication = (publication: PublicationRecord) => {
     setPublications((prev) => [...prev, publication])
   }
@@ -344,6 +592,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     collectSources,
     collectHistory,
     collectStats,
+    
+    // 新改写系统状态
+    rewriteLoading,
+    rewriteError,
+    rewriteRecords,
+    batchRewriteTasks,
+    rewriteConfigs,
+    rewriteStats,
+    currentRewriteProgress,
+    
     fetchMaterials,
     addMaterials,
     updateMaterial,
@@ -356,6 +614,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     fetchCollectHistory,
     fetchCollectStats,
     addRewrite,
+    
+    // 新改写系统方法
+    fetchRewriteRecords,
+    createRewriteRecord,
+    updateRewriteRecord,
+    deleteRewriteRecord,
+    fetchBatchRewriteTasks,
+    createBatchRewriteTask,
+    updateBatchRewriteTask,
+    cancelBatchRewriteTask,
+    fetchRewriteConfigs,
+    updateRewriteConfig,
+    fetchRewriteStats,
+    setRewriteProgress,
+    clearRewriteError,
+    
     addPublication,
     updateAccount,
     updateConfig,

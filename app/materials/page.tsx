@@ -40,6 +40,9 @@ import {
   Loader2,
   X,
   ExternalLink,
+  Download,
+  Sparkles,
+  ShieldCheck,
 } from "lucide-react"
 import type { Article } from "../../src/types"
 
@@ -47,6 +50,21 @@ const statusConfig = {
   pending: { label: "待处理", color: "bg-yellow-100 text-yellow-800", icon: Clock },
   rewritten: { label: "已改写", color: "bg-blue-100 text-blue-800", icon: CheckCircle },
   published: { label: "已发布", color: "bg-green-100 text-green-800", icon: Send },
+}
+
+const contentStatusConfig = {
+  pending: { label: "待获取", color: "bg-orange-100 text-orange-800", icon: Clock },
+  fetching: { label: "获取中", color: "bg-blue-100 text-blue-800", icon: Loader2 },
+  completed: { label: "已获取", color: "bg-green-100 text-green-800", icon: CheckCircle },
+  failed: { label: "获取失败", color: "bg-red-100 text-red-800", icon: AlertCircle },
+}
+
+const cleanStatusConfig = {
+  pending: { label: "待清理", color: "bg-yellow-100 text-yellow-800", icon: Clock },
+  cleaning: { label: "清理中", color: "bg-blue-100 text-blue-800", icon: Sparkles },
+  completed: { label: "已清理", color: "bg-green-100 text-green-800", icon: ShieldCheck },
+  failed: { label: "清理失败", color: "bg-red-100 text-red-800", icon: AlertCircle },
+  skipped: { label: "跳过清理", color: "bg-gray-100 text-gray-800", icon: X },
 }
 
 const platforms = ["全部", "微信公众号", "知乎", "百度热搜", "微博"]
@@ -73,6 +91,80 @@ export default function MaterialsPage() {
   const [editingMaterial, setEditingMaterial] = useState<Article | null>(null)
   const [viewingMaterial, setViewingMaterial] = useState<Article | null>(null)
   const [showFilters, setShowFilters] = useState(false)
+  const [fetchingContent, setFetchingContent] = useState<string[]>([])
+  const [cleaningContent, setCleaningContent] = useState<string[]>([])
+
+  // 获取单篇文章内容
+  const handleFetchContent = async (materialId: string) => {
+    if (fetchingContent.includes(materialId)) return;
+    
+    setFetchingContent(prev => [...prev, materialId]);
+    
+    try {
+      const response = await fetch('/api/content/fetch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          articleId: materialId
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('内容获取成功:', result);
+        
+        // 刷新素材列表以显示最新状态
+        await refreshMaterials();
+      } else {
+        const error = await response.json();
+        console.error('内容获取失败:', error);
+        alert(`内容获取失败: ${error.message || '未知错误'}`);
+      }
+    } catch (error) {
+      console.error('内容获取请求失败:', error);
+      alert('内容获取请求失败，请稍后重试');
+    } finally {
+      setFetchingContent(prev => prev.filter(id => id !== materialId));
+    }
+  };
+
+  // 手动清理单篇文章内容
+  const handleCleanContent = async (materialId: string) => {
+    if (cleaningContent.includes(materialId)) return;
+    
+    setCleaningContent(prev => [...prev, materialId]);
+    
+    try {
+      const response = await fetch('/api/content/clean', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          articleId: materialId
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('内容清理成功:', result);
+        
+        // 刷新素材列表以显示最新状态
+        await refreshMaterials();
+      } else {
+        const error = await response.json();
+        console.error('内容清理失败:', error);
+        alert(`内容清理失败: ${error.message || '未知错误'}`);
+      }
+    } catch (error) {
+      console.error('内容清理请求失败:', error);
+      alert('内容清理请求失败，请稍后重试');
+    } finally {
+      setCleaningContent(prev => prev.filter(id => id !== materialId));
+    }
+  };
 
   // Filter materials based on search and filters
   const filteredMaterials = useMemo(() => {
@@ -138,6 +230,14 @@ export default function MaterialsPage() {
   const MaterialCard = ({ material }: { material: Article }) => {
     const statusInfo = statusConfig[material.status]
     const StatusIcon = statusInfo.icon
+    
+    const contentStatus = material.contentStatus || 'pending'
+    const contentStatusInfo = contentStatusConfig[contentStatus]
+    const ContentStatusIcon = contentStatusInfo.icon
+
+    const cleanStatus = material.cleanStatus || 'pending'
+    const cleanStatusInfo = cleanStatusConfig[cleanStatus]
+    const CleanStatusIcon = cleanStatusInfo.icon
 
     return (
       <Card className="hover:shadow-md transition-shadow">
@@ -149,8 +249,28 @@ export default function MaterialsPage() {
                 onCheckedChange={() => handleSelectMaterial(material.id)}
               />
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-gray-900 line-clamp-2 mb-2">{material.title}</h3>
-                <p className="text-gray-600 text-sm line-clamp-2 mb-3">{material.content}</p>
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="font-semibold text-gray-900 line-clamp-2 flex-1">{material.title}</h3>
+                  <div className="flex gap-2 ml-2">
+                    {/* 内容获取状态指示器 */}
+                    {contentStatus !== 'completed' && (
+                      <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${contentStatusInfo.color}`}>
+                        <ContentStatusIcon className={`h-3 w-3 ${contentStatus === 'fetching' ? 'animate-spin' : ''}`} />
+                        {contentStatusInfo.label}
+                      </div>
+                    )}
+                    {/* 清理状态指示器 */}
+                    {contentStatus === 'completed' && cleanStatus !== 'skipped' && (
+                      <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${cleanStatusInfo.color}`}>
+                        <CleanStatusIcon className={`h-3 w-3 ${cleanStatus === 'cleaning' ? 'animate-spin' : ''}`} />
+                        {cleanStatusInfo.label}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <p className="text-gray-600 text-sm line-clamp-2 mb-3">
+                  {material.content || (contentStatus === 'pending' ? '正在获取文章内容...' : '暂无内容')}
+                </p>
               </div>
             </div>
             <DropdownMenu>
@@ -164,6 +284,47 @@ export default function MaterialsPage() {
                   <Edit className="h-4 w-4 mr-2" />
                   编辑
                 </DropdownMenuItem>
+                {/* 获取内容按钮 - 有链接的素材都可以获取内容 */}
+                {material.sourceUrl && (
+                  <>
+                    <DropdownMenuItem 
+                      onClick={() => handleFetchContent(material.id)}
+                      disabled={fetchingContent.includes(material.id)}
+                    >
+                      {fetchingContent.includes(material.id) ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-2" />
+                      )}
+                      {fetchingContent.includes(material.id) 
+                        ? '获取中...' 
+                        : material.contentStatus === 'completed' 
+                          ? '重新获取内容' 
+                          : material.contentStatus === 'failed'
+                            ? '重试获取内容'
+                            : '获取内容'
+                      }
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {/* 清理内容按钮 - 只有在已获取内容时显示 */}
+                {material.content && material.contentStatus === 'completed' && (
+                  <>
+                    <DropdownMenuItem 
+                      onClick={() => handleCleanContent(material.id)}
+                      disabled={cleaningContent.includes(material.id)}
+                    >
+                      {cleaningContent.includes(material.id) ? (
+                        <Sparkles className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <ShieldCheck className="h-4 w-4 mr-2" />
+                      )}
+                      {cleaningContent.includes(material.id) ? '清理中...' : '清理内容'}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem onClick={() => setViewingMaterial(material)}>
                   <Eye className="h-4 w-4 mr-2" />
                   查看详情
@@ -242,6 +403,14 @@ export default function MaterialsPage() {
   const MaterialRow = ({ material }: { material: Article }) => {
     const statusInfo = statusConfig[material.status]
     const StatusIcon = statusInfo.icon
+    
+    const contentStatus = material.contentStatus || 'pending'
+    const contentStatusInfo = contentStatusConfig[contentStatus]
+    const ContentStatusIcon = contentStatusInfo.icon
+
+    const cleanStatus = material.cleanStatus || 'pending'
+    const cleanStatusInfo = cleanStatusConfig[cleanStatus]
+    const CleanStatusIcon = cleanStatusInfo.icon
 
     return (
       <tr className="hover:bg-gray-50">
@@ -253,8 +422,26 @@ export default function MaterialsPage() {
         </td>
         <td className="px-4 py-3">
           <div className="max-w-md">
-            <h3 className="font-medium text-gray-900 line-clamp-1">{material.title}</h3>
-            <p className="text-sm text-gray-500 line-clamp-1 mt-1">{material.content}</p>
+            <div className="flex items-start justify-between">
+              <h3 className="font-medium text-gray-900 line-clamp-1 flex-1">{material.title}</h3>
+              <div className="flex gap-1 ml-2">
+                {contentStatus !== 'completed' && (
+                  <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium ${contentStatusInfo.color}`}>
+                    <ContentStatusIcon className={`h-2.5 w-2.5 ${contentStatus === 'fetching' ? 'animate-spin' : ''}`} />
+                    {contentStatusInfo.label}
+                  </div>
+                )}
+                {contentStatus === 'completed' && cleanStatus !== 'skipped' && (
+                  <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium ${cleanStatusInfo.color}`}>
+                    <CleanStatusIcon className={`h-2.5 w-2.5 ${cleanStatus === 'cleaning' ? 'animate-spin' : ''}`} />
+                    {cleanStatusInfo.label}
+                  </div>
+                )}
+              </div>
+            </div>
+            <p className="text-sm text-gray-500 line-clamp-1 mt-1">
+              {material.content || (contentStatus === 'pending' ? '正在获取文章内容...' : '暂无内容')}
+            </p>
           </div>
         </td>
         <td className="px-4 py-3">
@@ -301,6 +488,47 @@ export default function MaterialsPage() {
                 <Edit className="h-4 w-4 mr-2" />
                 编辑
               </DropdownMenuItem>
+              {/* 获取内容按钮 - 有链接的素材都可以获取内容 */}
+              {material.sourceUrl && (
+                <>
+                  <DropdownMenuItem 
+                    onClick={() => handleFetchContent(material.id)}
+                    disabled={fetchingContent.includes(material.id)}
+                  >
+                    {fetchingContent.includes(material.id) ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    {fetchingContent.includes(material.id) 
+                      ? '获取中...' 
+                      : material.contentStatus === 'completed' 
+                        ? '重新获取内容' 
+                        : material.contentStatus === 'failed'
+                          ? '重试获取内容'
+                          : '获取内容'
+                    }
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              {/* 清理内容按钮 - 只有在已获取内容时显示 */}
+              {material.content && material.contentStatus === 'completed' && (
+                <>
+                  <DropdownMenuItem 
+                    onClick={() => handleCleanContent(material.id)}
+                    disabled={cleaningContent.includes(material.id)}
+                  >
+                    {cleaningContent.includes(material.id) ? (
+                      <Sparkles className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <ShieldCheck className="h-4 w-4 mr-2" />
+                    )}
+                    {cleaningContent.includes(material.id) ? '清理中...' : '清理内容'}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem onClick={() => setViewingMaterial(material)}>
                 <Eye className="h-4 w-4 mr-2" />
                 查看详情

@@ -7,6 +7,21 @@ import {
   CollectBatch, 
   CollectOperationResult 
 } from '@/src/types';
+import type { 
+  AnalyzeSegmentsRequest,
+  AnalyzeSegmentsResponse,
+  RewriteSegmentsRequest,
+  RewriteSegmentsResponse,
+  IntegrateSegmentsRequest,
+  IntegrateSegmentsResponse,
+  EvaluateQualityRequest,
+  EvaluateQualityResponse,
+  RewriteRecord,
+  BatchRewriteTask,
+  RewriteConfig,
+  RewriteStats,
+  RewriteHistoryQueryParams
+} from '@/src/types/rewrite';
 import { ApiResponse, MaterialsQueryParams, BatchOperation } from './api-types';
 
 // API基础配置 - 使用相对路径避免跨域问题
@@ -313,6 +328,78 @@ class ExtendedApiClient extends ApiClient {
   }>> {
     return this.get('/collect/history', params);
   }
+  
+  // === 改写相关API方法 ===
+  
+  // 文章分段分析
+  async analyzeSegments(request: AnalyzeSegmentsRequest): Promise<ApiResponse<AnalyzeSegmentsResponse['data']>> {
+    return this.post<AnalyzeSegmentsResponse['data']>('/rewrite/analyze-segments', request);
+  }
+  
+  // 分段改写
+  async rewriteSegments(request: RewriteSegmentsRequest): Promise<ApiResponse<RewriteSegmentsResponse['data']>> {
+    return this.post<RewriteSegmentsResponse['data']>('/rewrite/rewrite-segments', request);
+  }
+  
+  // 段落整合
+  async integrateSegments(request: IntegrateSegmentsRequest): Promise<ApiResponse<IntegrateSegmentsResponse['data']>> {
+    return this.post<IntegrateSegmentsResponse['data']>('/rewrite/integrate-segments', request);
+  }
+  
+  // 质量评估
+  async evaluateQuality(request: EvaluateQualityRequest): Promise<ApiResponse<EvaluateQualityResponse['data']>> {
+    return this.post<EvaluateQualityResponse['data']>('/rewrite/evaluate-quality', request);
+  }
+  
+  // 获取改写历史
+  async getRewriteHistory(params: RewriteHistoryQueryParams = {}): Promise<ApiResponse<{
+    records: RewriteRecord[];
+    total: number;
+    page: number;
+    limit: number;
+  }>> {
+    return this.get('/rewrite/history', params);
+  }
+  
+  // 获取改写统计
+  async getRewriteStats(): Promise<ApiResponse<RewriteStats>> {
+    return this.get<RewriteStats>('/rewrite/stats');
+  }
+  
+  // 获取改写配置
+  async getRewriteConfigs(): Promise<ApiResponse<RewriteConfig[]>> {
+    return this.get<RewriteConfig[]>('/rewrite/config');
+  }
+  
+  // 更新改写配置
+  async updateRewriteConfig(key: string, value: any): Promise<ApiResponse<RewriteConfig>> {
+    return this.put<RewriteConfig>('/rewrite/config', { key, value });
+  }
+  
+  // 批量改写任务管理
+  async createBatchRewriteTask(task: Omit<BatchRewriteTask, 'id' | 'createdAt'>): Promise<ApiResponse<BatchRewriteTask>> {
+    return this.post<BatchRewriteTask>('/rewrite/batch', task);
+  }
+  
+  async getBatchRewriteTasks(params: { status?: string; page?: number; limit?: number } = {}): Promise<ApiResponse<{
+    tasks: BatchRewriteTask[];
+    total: number;
+  }>> {
+    return this.get('/rewrite/batch', params);
+  }
+  
+  async updateBatchRewriteTask(id: string, updates: Partial<BatchRewriteTask>): Promise<ApiResponse<BatchRewriteTask>> {
+    return this.put<BatchRewriteTask>(`/rewrite/batch/${id}`, updates);
+  }
+  
+  async cancelBatchRewriteTask(id: string): Promise<ApiResponse<void>> {
+    return this.delete<void>(`/rewrite/batch/${id}`);
+  }
+  
+  // 删除改写记录
+  async deleteRewriteRecord(id: string): Promise<ApiResponse<void>> {
+    return this.delete<void>(`/rewrite/history/${id}`);
+  }
 }
 
 // 创建扩展的API客户端实例
@@ -343,6 +430,30 @@ export const collectApi = {
   getStats: () => extendedApiClient.getCollectHistory({ includeStats: true, limit: 1 }),
 };
 
+// 导出改写相关API方法
+export const rewriteApi = {
+  // === 分段改写流程 ===
+  analyzeSegments: (request: AnalyzeSegmentsRequest) => extendedApiClient.analyzeSegments(request),
+  rewriteSegments: (request: RewriteSegmentsRequest) => extendedApiClient.rewriteSegments(request),
+  integrateSegments: (request: IntegrateSegmentsRequest) => extendedApiClient.integrateSegments(request),
+  evaluateQuality: (request: EvaluateQualityRequest) => extendedApiClient.evaluateQuality(request),
+  
+  // === 改写历史和统计 ===
+  getHistory: (params?: RewriteHistoryQueryParams) => extendedApiClient.getRewriteHistory(params),
+  getStats: () => extendedApiClient.getRewriteStats(),
+  deleteRecord: (id: string) => extendedApiClient.deleteRewriteRecord(id),
+  
+  // === 批量任务管理 ===
+  createBatchTask: (task: Omit<BatchRewriteTask, 'id' | 'createdAt'>) => extendedApiClient.createBatchRewriteTask(task),
+  getBatchTasks: (params?: { status?: string; page?: number; limit?: number }) => extendedApiClient.getBatchRewriteTasks(params),
+  updateBatchTask: (id: string, updates: Partial<BatchRewriteTask>) => extendedApiClient.updateBatchRewriteTask(id, updates),
+  cancelBatchTask: (id: string) => extendedApiClient.cancelBatchRewriteTask(id),
+  
+  // === 配置管理 ===
+  getConfigs: () => extendedApiClient.getRewriteConfigs(),
+  updateConfig: (key: string, value: any) => extendedApiClient.updateRewriteConfig(key, value),
+};
+
 // 全局错误处理器
 export class ApiError extends Error {
   constructor(
@@ -370,3 +481,6 @@ export function handleApiResponse<T>(response: ApiResponse<T>): T {
 
 // 导出默认API客户端
 export default apiClient;
+
+// 导出扩展API客户端（包含改写功能）
+export { extendedApiClient };
