@@ -29,6 +29,9 @@ npx tsc --noEmit
 ```bash
 # 测试今日热榜API连接
 curl -X GET "http://localhost:3000/api/test-tophub"
+
+# 测试极致了API连接
+curl -X GET "http://localhost:3000/api/test-jizhile"
 ```
 
 ### 重要提醒
@@ -111,12 +114,22 @@ curl -X GET "http://localhost:3000/api/test-tophub"
 ## 环境配置
 
 ### 必需的环境变量
-创建 `.env.local` 文件并配置：
+复制 `.env.local.example` 为 `.env.local` 并配置：
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 TOPHUB_ACCESS_KEY=your_tophub_access_key
+
+# 极致了API配置（推荐配置，大幅提升微信文章获取成功率）
+JIZHILE_API_KEY=your_jizhile_api_key
+JIZHILE_VERIFY_CODE=your_jizhile_verify_code  # 可选
 ```
+
+**极致了API说明**：
+- 用于获取微信文章详细内容，成功率95%以上
+- 按调用结果计费，0.02元/条，最低0.02元
+- 可选配置，不配置时使用HTML解析（成功率较低）
+- 获取API密钥：[极致了官网](https://www.dajiala.com)
 
 ### 数据库结构
 项目依赖Supabase的`articles`表：
@@ -165,9 +178,10 @@ TOPHUB_ACCESS_KEY=your_tophub_access_key
 ### 采集功能开发要点
 - 采集源配置支持多平台（微信、知乎、今日热榜等）
 - 批量采集和实时进度跟踪
-- 采集结果去重和筛选机制
+- **智能去重机制**：根据标题或URL自动去重，避免重复添加
 - 支持关键词搜索和全量采集两种模式
-- 采集数据自动同步到素材库
+- **智能内容获取**：微信文章优先使用极致了API，失败时降级为HTML解析
+- 采集数据自动同步到素材库，空内容自动标记待获取
 
 ### 错误处理规范
 - API层统一使用`ApiError`类抛出错误

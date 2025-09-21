@@ -29,11 +29,32 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('❌ Supabase环境变量未配置:', {
+    urlSet: !!supabaseUrl,
+    keySet: !!supabaseAnonKey
+  })
   throw new Error('缺少Supabase环境变量。请检查.env.local文件中的NEXT_PUBLIC_SUPABASE_URL和NEXT_PUBLIC_SUPABASE_ANON_KEY配置。')
 }
 
+console.log('✅ Supabase环境变量已配置:', {
+  url: supabaseUrl.substring(0, 30) + '...',
+  keyPrefix: supabaseAnonKey.substring(0, 10) + '...'
+})
+
 // 创建Supabase客户端
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false // 禁用会话持久化，避免缓存问题
+  },
+  db: {
+    schema: 'public' // 明确指定schema
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'supabase-js-nextjs' // 添加客户端标识
+    }
+  }
+})
 
 // 创建客户端函数（用于API路由）
 export function getClient() {
@@ -408,6 +429,8 @@ export class SupabaseService {
     isActive?: boolean
   } = {}): Promise<CollectSource[]> {
     try {
+      console.log('🔍 开始查询采集源列表，筛选条件:', options)
+
       let query = supabase
         .from('collect_sources')
         .select('*')
@@ -416,24 +439,45 @@ export class SupabaseService {
       // 平台筛选
       if (options.platform) {
         query = query.eq('platform', options.platform)
+        console.log(`   📝 添加平台筛选: ${options.platform}`)
       }
 
       // 状态筛选
       if (options.isActive !== undefined) {
         query = query.eq('is_active', options.isActive)
+        console.log(`   📝 添加状态筛选: ${options.isActive}`)
       }
 
+      console.log('   🚀 执行Supabase查询...')
       const { data, error } = await query
 
       if (error) {
-        console.error('获取采集源列表失败:', error)
+        console.error('❌ Supabase查询错误:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        })
+
+        // 提供更友好的错误信息
+        if (error.message.includes('fetch failed')) {
+          console.log('   💡 可能是网络连接问题，建议检查:')
+          console.log('   1. 网络连接是否正常')
+          console.log('   2. Supabase项目是否处于活跃状态')
+          console.log('   3. 防火墙设置')
+        }
+
         throw new Error(`获取采集源失败: ${error.message}`)
       }
 
+      console.log(`✅ 查询成功，获取到 ${data ? data.length : 0} 条采集源记录`)
       return data ? data.map(dbCollectSourceToCollectSource) : []
 
     } catch (error) {
-      console.error('getCollectSources error:', error)
+      console.error('❌ getCollectSources执行异常:', {
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : 'N/A'
+      })
       throw error
     }
   }
@@ -1331,6 +1375,35 @@ export class SupabaseService {
   }
 
   /**
+   * 根据ID列表获取采集结果
+   */
+  static async getCollectResultsByIds(ids: string[]): Promise<CollectResult[]> {
+    try {
+      console.log(`🔍 查询采集结果，IDs: ${ids.slice(0, 3).join(', ')}${ids.length > 3 ? '...' : ''} (共${ids.length}条)`)
+
+      const { data, error } = await supabase
+        .from('collect_results')
+        .select('*')
+        .in('id', ids)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('查询采集结果失败:', error)
+        throw new Error(`查询采集结果失败: ${error.message}`)
+      }
+
+      const results = (data || []).map(this.convertToCollectResult)
+      console.log(`✅ 查询采集结果成功，返回 ${results.length} 条记录`)
+
+      return results
+
+    } catch (error) {
+      console.error('getCollectResultsByIds error:', error)
+      throw error
+    }
+  }
+
+  /**
    * 更新采集结果选中状态
    */
   static async updateCollectResultSelection(ids: string[], isSelected: boolean): Promise<number> {
@@ -1357,9 +1430,19 @@ export class SupabaseService {
   }
 
   /**
-   * 将采集结果添加到素材库
+   * 将采集结果添加到素材库（带去重功能）
    */
-  static async addCollectResultsToMaterials(resultIds: string[]): Promise<{ added: number, skipped: number }> {
+  static async addCollectResultsToMaterials(resultIds: string[]): Promise<{
+    added: number,
+    skipped: number,
+    duplicated: number,
+    details: {
+      duplicateByTitle: number,
+      duplicateByUrl: number,
+      alreadyAdded: number,
+      newlyAdded: number
+    }
+  }> {
     try {
       // 首先获取选中的采集结果
       const { data: results, error: fetchError } = await supabase
@@ -1374,14 +1457,95 @@ export class SupabaseService {
       }
 
       if (!results || results.length === 0) {
-        return { added: 0, skipped: resultIds.length }
+        return {
+          added: 0,
+          skipped: resultIds.length,
+          duplicated: 0,
+          details: {
+            duplicateByTitle: 0,
+            duplicateByUrl: 0,
+            alreadyAdded: resultIds.length,
+            newlyAdded: 0
+          }
+        }
       }
 
-      // 转换为文章格式并插入到articles表
-      const articles = results.map(result => {
+      console.log(`🔍 开始去重检查，共 ${results.length} 条采集结果`)
+
+      // 去重检查：批量查询已存在的文章
+      const titles = results.map(r => r.title).filter(Boolean)
+      const urls = results.map(r => r.source_url).filter(Boolean)
+
+      // 批量检查标题重复
+      const { data: existingByTitle } = await supabase
+        .from('articles')
+        .select('title')
+        .in('title', titles)
+
+      // 批量检查URL重复
+      const { data: existingByUrl } = await supabase
+        .from('articles')
+        .select('source_url')
+        .in('source_url', urls)
+        .not('source_url', 'is', null)
+
+      const existingTitles = new Set(existingByTitle?.map(item => item.title) || [])
+      const existingUrls = new Set(existingByUrl?.map(item => item.source_url) || [])
+
+      // 过滤掉重复的采集结果
+      const uniqueResults = results.filter(result => {
+        // 检查标题重复
+        if (result.title && existingTitles.has(result.title)) {
+          console.log(`⚠️  跳过重复标题: ${result.title}`)
+          return false
+        }
+
+        // 检查URL重复
+        if (result.source_url && existingUrls.has(result.source_url)) {
+          console.log(`⚠️  跳过重复URL: ${result.source_url}`)
+          return false
+        }
+
+        return true
+      })
+
+      // 统计去重信息
+      const duplicatedByTitle = results.filter(r =>
+        r.title && existingTitles.has(r.title)
+      ).length
+
+      const duplicatedByUrl = results.filter(r =>
+        r.source_url && existingUrls.has(r.source_url)
+      ).length
+
+      const totalDuplicated = results.length - uniqueResults.length
+      const alreadyAdded = resultIds.length - results.length
+
+      console.log(`📊 去重统计: 总计${results.length}条，去重后${uniqueResults.length}条`)
+      console.log(`   - 标题重复: ${duplicatedByTitle}条`)
+      console.log(`   - URL重复: ${duplicatedByUrl}条`)
+      console.log(`   - 已添加过: ${alreadyAdded}条`)
+
+      if (uniqueResults.length === 0) {
+        console.log('✅ 所有采集结果都已存在，无需添加')
+        return {
+          added: 0,
+          skipped: results.length + alreadyAdded,
+          duplicated: totalDuplicated,
+          details: {
+            duplicateByTitle: duplicatedByTitle,
+            duplicateByUrl: duplicatedByUrl,
+            alreadyAdded,
+            newlyAdded: 0
+          }
+        }
+      }
+
+      // 转换为文章格式
+      const articles = uniqueResults.map(result => {
         const hasUrl = result.source_url && result.source_url.trim() !== '';
         const hasMinimalContent = result.content && result.content.length > 50;
-        
+
         return {
           title: result.title,
           content: result.content || '',
@@ -1395,13 +1559,14 @@ export class SupabaseService {
           read_count: result.read_count,
           like_count: result.like_count,
           status: 'pending' as const,
-          // 新增：自动设置内容获取状态
+          // 智能设置内容获取状态
           content_status: (hasUrl && !hasMinimalContent) ? 'pending' : 'completed',
           fetch_attempts: 0,
           last_fetch_attempt: null
         }
       })
 
+      // 批量插入到articles表
       const { data: insertedArticles, error: insertError } = await supabase
         .from('articles')
         .insert(articles)
@@ -1412,10 +1577,10 @@ export class SupabaseService {
         throw new Error(`添加到素材库失败: ${insertError.message}`)
       }
 
-      // 标记采集结果为已添加
+      // 标记所有采集结果为已添加（包括重复的）
       const { error: updateError } = await supabase
         .from('collect_results')
-        .update({ 
+        .update({
           added_to_materials: true,
           updated_at: new Date().toISOString()
         })
@@ -1428,19 +1593,30 @@ export class SupabaseService {
 
       // 统计需要获取内容的文章数量
       const articlesNeedingContent = articles.filter(article => article.content_status === 'pending').length;
-      
+
       if (articlesNeedingContent > 0) {
         console.log(`📥 已添加 ${articlesNeedingContent} 篇文章需要获取内容，将启动自动处理...`);
-        
+
         // 异步启动自动内容获取服务（不等待结果）
         this.triggerAutoContentFetch().catch(error => {
           console.error('启动自动内容获取失败:', error);
         });
       }
 
-      return { 
-        added: insertedArticles?.length || 0, 
-        skipped: resultIds.length - results.length 
+      const newlyAdded = insertedArticles?.length || 0
+
+      console.log(`✅ 添加完成: 新增${newlyAdded}条，跳过重复${totalDuplicated}条，已添加过${alreadyAdded}条`)
+
+      return {
+        added: newlyAdded,
+        skipped: totalDuplicated + alreadyAdded,
+        duplicated: totalDuplicated,
+        details: {
+          duplicateByTitle: duplicatedByTitle,
+          duplicateByUrl: duplicatedByUrl,
+          alreadyAdded,
+          newlyAdded
+        }
       }
 
     } catch (error) {

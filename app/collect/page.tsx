@@ -51,7 +51,8 @@ export default function CollectPage() {
     platform: "",
     hashId: "",
     category: "",
-    description: ""
+    description: "",
+    apiKey: "" // 极致了API密钥（仅微信平台使用）
   })
 
   // 加载采集源列表
@@ -72,12 +73,28 @@ export default function CollectPage() {
   // 新建采集源
   const createCollectSource = async () => {
     try {
-      if (!sourceForm.name || !sourceForm.platform || !sourceForm.hashId) {
+      if (!sourceForm.name || !sourceForm.platform) {
         toast.error("请填写所有必需字段")
         return
       }
 
+      // 微信平台特殊验证
+      const platform = sourceForm.platform.trim().toLowerCase();
+      const isWechatPlatform = platform === '微信' || platform === 'wechat';
+
+      if (!isWechatPlatform && !sourceForm.hashId) {
+        toast.error("非微信平台需要填写HashId")
+        return
+      }
+
       setLoading(true)
+
+      // 构建配置对象 - 为微信平台添加API密钥
+      const config: Record<string, any> = {};
+      if (isWechatPlatform && sourceForm.apiKey.trim()) {
+        config.apiKey = sourceForm.apiKey.trim();
+      }
+
       const response = await collectApi.createSource({
         name: sourceForm.name.trim(),
         platform: sourceForm.platform.trim(),
@@ -86,13 +103,13 @@ export default function CollectPage() {
         description: sourceForm.description.trim() || "",
         userCreated: true,
         isActive: true,
-        config: {}
+        config
       })
       
       handleApiResponse(response)
       toast.success("采集源创建成功")
       setShowSourceDialog(false)
-      setSourceForm({ name: "", platform: "", hashId: "", category: "", description: "" })
+      setSourceForm({ name: "", platform: "", hashId: "", category: "", description: "", apiKey: "" })
       loadCollectSources()
       
     } catch (error: any) {
@@ -605,7 +622,7 @@ export default function CollectPage() {
                       <DialogHeader>
                         <DialogTitle>添加新的采集源</DialogTitle>
                         <DialogDescription>
-                          填写采集源的基本信息，HashId可在今日热榜官网获取
+                          填写采集源的基本信息。微信平台支持关键词搜索，需要配置极致了API密钥；其他平台需要HashId（可在今日热榜官网获取）
                         </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4">
@@ -628,14 +645,47 @@ export default function CollectPage() {
                           />
                         </div>
                         <div>
-                          <Label htmlFor="sourceHashId">HashId*</Label>
+                          <Label htmlFor="sourceHashId">
+                            {sourceForm.platform.toLowerCase() === '微信' || sourceForm.platform.toLowerCase() === 'wechat' ?
+                              'HashId (可选，关键词搜索时不需要)' : 'HashId*'
+                            }
+                          </Label>
                           <Input
                             id="sourceHashId"
                             value={sourceForm.hashId}
                             onChange={(e) => setSourceForm(prev => ({...prev, hashId: e.target.value}))}
-                            placeholder="10位字母数字组合"
+                            placeholder={sourceForm.platform.toLowerCase() === '微信' || sourceForm.platform.toLowerCase() === 'wechat' ?
+                              '微信平台关键词搜索时可留空' : '10位字母数字组合'
+                            }
                           />
                         </div>
+
+                        {/* 微信平台特殊配置 */}
+                        {(sourceForm.platform.toLowerCase() === '微信' || sourceForm.platform.toLowerCase() === 'wechat') && (
+                          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full" />
+                              <span className="font-medium text-blue-900 text-sm">微信平台专用配置</span>
+                            </div>
+                            <div>
+                              <Label htmlFor="sourceApiKey" className="text-blue-900">
+                                极致了API密钥
+                                <span className="text-blue-600 text-xs ml-1">(关键词搜索必需)</span>
+                              </Label>
+                              <Input
+                                id="sourceApiKey"
+                                type="password"
+                                value={sourceForm.apiKey}
+                                onChange={(e) => setSourceForm(prev => ({...prev, apiKey: e.target.value}))}
+                                placeholder="输入极致了API密钥"
+                                className="mt-2 bg-white"
+                              />
+                              <p className="text-xs text-blue-600 mt-1">
+                                关键词搜索微信文章时需要，按调用结果扣费：0.02元/条
+                              </p>
+                            </div>
+                          </div>
+                        )}
                         <div>
                           <Label htmlFor="sourceCategory">分类</Label>
                           <Input

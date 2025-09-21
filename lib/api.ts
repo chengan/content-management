@@ -37,8 +37,8 @@ class ApiClient {
   }
 
   // 通用请求方法
-  private async request<T>(
-    endpoint: string, 
+  protected async request<T>(
+    endpoint: string,
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseUrl}${API_PREFIX}${endpoint}`;
@@ -98,7 +98,7 @@ class ApiClient {
   }
 
   // GET请求
-  private async get<T>(endpoint: string, params?: Record<string, any>): Promise<ApiResponse<T>> {
+  protected async get<T>(endpoint: string, params?: Record<string, any>): Promise<ApiResponse<T>> {
     let url = endpoint;
     if (params) {
       const searchParams = new URLSearchParams();
@@ -117,7 +117,7 @@ class ApiClient {
   }
 
   // POST请求
-  private async post<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+  protected async post<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
@@ -125,7 +125,7 @@ class ApiClient {
   }
 
   // PUT请求
-  private async put<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+  protected async put<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: 'PUT',
       body: data ? JSON.stringify(data) : undefined,
@@ -133,7 +133,7 @@ class ApiClient {
   }
 
   // DELETE请求
-  private async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
+  protected async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, { method: 'DELETE' });
   }
 

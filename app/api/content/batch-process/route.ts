@@ -43,6 +43,10 @@ async function processBatch(articles: any[], options: {
       );
 
       const startTime = Date.now();
+
+      // 检测是否为微信文章，智能选择获取方法
+      const isWechatArticle = article.sourceUrl.includes('mp.weixin.qq.com');
+
       // 获取文章内容
       const fetchResult = await ContentFetcherService.fetchArticleContent(article.sourceUrl);
       const duration = Date.now() - startTime;
@@ -75,7 +79,9 @@ async function processBatch(articles: any[], options: {
           status: 'success',
           wordCount: fetchResult.wordCount,
           contentLength: fetchResult.content.length,
-          platform: fetchResult.platform
+          platform: fetchResult.platform,
+          method: fetchResult.method || 'html', // 获取方法
+          apiCost: fetchResult.apiCost || 0 // API成本
         });
 
         console.log(`✅ ${progress} 成功获取: ${article.title}`);
@@ -100,7 +106,8 @@ async function processBatch(articles: any[], options: {
           title: article.title,
           status: 'failed',
           error: fetchResult.error || '未知错误',
-          platform: fetchResult.platform
+          platform: fetchResult.platform,
+          method: fetchResult.method || 'fallback'
         });
 
         console.log(`❌ ${progress} 获取失败: ${article.title}`);
@@ -129,7 +136,8 @@ async function processBatch(articles: any[], options: {
         title: article.title,
         status: 'failed',
         error: error.message,
-        platform: 'unknown'
+        platform: 'unknown',
+        method: 'error'
       });
     }
 
@@ -151,11 +159,17 @@ async function processBatch(articles: any[], options: {
         console.log(`🚨 连续失败 ${recentFailures} 次，大幅延长等待时间到 ${adaptiveDelay}ms`);
       }
       
-      // 微信文章使用更长的延迟
+      // 微信文章使用更长的延迟，特别是使用极致了API时
       const nextArticle = articles[i + 1];
       if (nextArticle && nextArticle.sourceUrl.includes('mp.weixin.qq.com')) {
-        adaptiveDelay = Math.max(adaptiveDelay, 5000);
-        console.log(`📱 下一篇为微信文章，使用更长延迟: ${adaptiveDelay}ms`);
+        // 基础延迟为5秒，如果刚刚使用了极致了API，延长到8秒
+        const currentResult = results[results.length - 1];
+        const isJizhileAPI = currentResult?.method === 'jizhile';
+
+        const wechatDelay = isJizhileAPI ? 8000 : 5000;
+        adaptiveDelay = Math.max(adaptiveDelay, wechatDelay);
+
+        console.log(`📱 下一篇为微信文章，使用${isJizhileAPI ? '极致了API' : '标准'}延迟: ${adaptiveDelay}ms`);
       }
       
       if (adaptiveDelay > 0) {
@@ -266,7 +280,7 @@ export async function POST(request: NextRequest) {
       failed = batchResults.failed;
     }
 
-    // 统计各平台的成功率
+    // 统计各平台和获取方法的成功率
     const platformStats = results.reduce((acc, result) => {
       const platform = result.platform || 'unknown';
       if (!acc[platform]) {
@@ -279,16 +293,60 @@ export async function POST(request: NextRequest) {
       return acc;
     }, {} as Record<string, { total: number; success: number }>);
 
+    // 统计获取方法
+    const methodStats = results.reduce((acc, result) => {
+      const method = result.method || 'unknown';
+      if (!acc[method]) {
+        acc[method] = { total: 0, success: 0, totalCost: 0 };
+      }
+      acc[method].total++;
+      if (result.status === 'success') {
+        acc[method].success++;
+      }
+      if (result.apiCost) {
+        acc[method].totalCost += result.apiCost;
+      }
+      return acc;
+    }, {} as Record<string, { total: number; success: number; totalCost: number }>);
+
+    // 计算总API成本
+    const totalApiCost = results.reduce((sum, result) => sum + (result.apiCost || 0), 0);
+
     console.log(`🏁 批量处理完成统计:`);
     console.log(`✅ 成功: ${successful} 篇`);
     console.log(`❌ 失败: ${failed} 篇`);
     console.log(`📈 成功率: ${((successful / articlesToProcess.length) * 100).toFixed(1)}%`);
-    
+
+    if (totalApiCost > 0) {
+      console.log(`💰 API总消费: ${totalApiCost.toFixed(4)} 元`);
+    }
+
     // 按平台统计
     Object.entries(platformStats).forEach(([platform, stats]) => {
       const rate = ((stats.success / stats.total) * 100).toFixed(1);
       const icon = platform === 'wechat' ? '📱' : '🌐';
       console.log(`${icon} ${platform}: ${stats.success}/${stats.total} (成功率 ${rate}%)`);
+    });
+
+    // 按获取方法统计
+    console.log(`📊 获取方法统计:`);
+    Object.entries(methodStats).forEach(([method, stats]) => {
+      const rate = ((stats.success / stats.total) * 100).toFixed(1);
+      let icon = '🔧';
+      switch (method) {
+        case 'jizhile':
+          icon = '🔥';
+          break;
+        case 'html':
+          icon = '🌐';
+          break;
+        case 'fallback':
+          icon = '⚠️ ';
+          break;
+      }
+
+      const costInfo = stats.totalCost > 0 ? ` (消费 ${stats.totalCost.toFixed(4)} 元)` : '';
+      console.log(`${icon} ${method}: ${stats.success}/${stats.total} (成功率 ${rate}%)${costInfo}`);
     });
 
     const message = `批量处理完成：成功 ${successful} 篇，失败 ${failed} 篇`;
@@ -298,7 +356,12 @@ export async function POST(request: NextRequest) {
       successful,
       failed,
       results,
-      skipped: articles.length - articlesToProcess.length
+      skipped: articles.length - articlesToProcess.length,
+      stats: {
+        platforms: platformStats,
+        methods: methodStats,
+        totalApiCost: totalApiCost
+      }
     }, { message });
 
   } catch (error: any) {

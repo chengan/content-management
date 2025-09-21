@@ -5,6 +5,7 @@
 
 import * as cheerio from 'cheerio';
 import { ContentCleanerService } from './content-cleaner';
+import { JizhileService } from './jizhile';
 
 // 用户代理列表，模拟不同浏览器
 const USER_AGENTS = [
@@ -83,6 +84,8 @@ export interface ContentFetchResult {
   wordCount: number;
   error?: string;
   platform?: string;
+  method?: 'jizhile' | 'html' | 'fallback'; // 获取方法标识
+  apiCost?: number; // API消费金额（仅极致了API）
   cleanResult?: {
     cleaned: boolean;
     wordCountBefore: number;
@@ -302,22 +305,208 @@ export class ContentFetcherService {
   }
 
   /**
+   * 使用极致了API获取微信文章内容
+   */
+  private static async fetchWechatContentWithJizhile(url: string): Promise<{
+    success: boolean;
+    content: string;
+    title?: string;
+    author?: string;
+    wordCount: number;
+    apiCost?: number;
+    error?: string;
+  }> {
+    try {
+      console.log(`🔥 使用极致了API获取微信文章内容: ${url}`);
+
+      // 清理和标准化URL
+      // 1. 移除锚点（#后面的部分）
+      let cleanUrl = url.split('#')[0];
+
+      // 2. 解码可能存在的双重编码问题
+      // 如果URL中包含 %3D%3D (双重编码的==)，需要解码
+      if (cleanUrl.includes('%3D%3D')) {
+        try {
+          cleanUrl = decodeURIComponent(cleanUrl);
+        } catch (e) {
+          console.warn('URL解码失败，使用原始URL');
+        }
+      }
+
+      // 3. 确保URL格式正确
+      if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+        cleanUrl = 'https://' + cleanUrl;
+      }
+
+      console.log(`📋 清理后的URL: ${cleanUrl}`);
+
+      const articleDetail = await JizhileService.getArticleDetail({
+        url: cleanUrl,
+        mode: '2' // 纯文字+富文本格式，内容更完整
+      });
+
+      if (!articleDetail || !articleDetail.content) {
+        throw new Error('极致了API未返回文章内容');
+      }
+
+      // 清理和格式化内容
+      let content = articleDetail.content;
+
+      // 移除HTML标签但保留换行结构
+      content = content
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<\/(div|p|br|section|article|h[1-6])>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#[0-9]+;/g, '')
+        .replace(/\n+/g, '\n')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const wordCount = content.length;
+      const apiCost = articleDetail.cost_money || 0;
+
+      console.log(`✅ 极致了API获取成功: ${wordCount} 字，消费 ${apiCost} 元`);
+
+      return {
+        success: true,
+        content,
+        title: articleDetail.title || undefined,
+        author: articleDetail.nick_name || articleDetail.author || undefined,
+        wordCount,
+        apiCost
+      };
+
+    } catch (error: any) {
+      console.error(`❌ 极致了API获取失败: ${error.message}`);
+      return {
+        success: false,
+        content: '',
+        wordCount: 0,
+        error: `极致了API错误: ${error.message}`
+      };
+    }
+  }
+
+  /**
    * 获取文章内容（主要方法）
    */
   static async fetchArticleContent(
-    url: string, 
-    retryCount: number = 0, 
-    options: { 
+    url: string,
+    retryCount: number = 0,
+    options: {
       enableClean?: boolean;
       cleanConfig?: any;
+      forceHtmlMethod?: boolean; // 强制使用HTML解析方法
     } = {}
   ): Promise<ContentFetchResult> {
     try {
       console.log(`📄 开始获取文章内容: ${url}`);
-      
+      console.log(`🔍 URL详细信息:`, {
+        originalUrl: url,
+        urlLength: url.length,
+        hasBiz: url.includes('__biz='),
+        hasAnchor: url.includes('#'),
+        isWechat: url.includes('mp.weixin.qq.com')
+      });
+
+      // 特别检查微信文章URL的biz参数
+      if (url.includes('mp.weixin.qq.com') && url.includes('__biz=')) {
+        const bizMatch = url.match(/__biz=([^&]+)/);
+        if (bizMatch) {
+          console.log(`📱 微信文章biz参数分析:`, {
+            bizValue: bizMatch[1],
+            bizLength: bizMatch[1].length,
+            isNormalLength: bizMatch[1].length >= 20,
+            hasEquals: bizMatch[1].includes('=')
+          });
+
+          if (bizMatch[1].length < 20) {
+            console.warn(`⚠️  biz参数长度异常: ${bizMatch[1]} (长度: ${bizMatch[1].length})`);
+          }
+        }
+      }
+
       // 检测平台类型
       const platform = this.detectPlatform(url);
       console.log(`🔍 检测到平台类型: ${platform}`);
+
+      // 对于微信文章，优先尝试使用极致了API
+      if (platform === 'wechat' && !options.forceHtmlMethod) {
+        console.log(`📱 微信文章检测，优先使用极致了API获取内容...`);
+
+        const jizhileResult = await this.fetchWechatContentWithJizhile(url);
+
+        if (jizhileResult.success) {
+          // 极致了API获取成功
+          let result: ContentFetchResult = {
+            success: true,
+            content: jizhileResult.content,
+            originalContent: jizhileResult.content,
+            title: jizhileResult.title,
+            author: jizhileResult.author,
+            wordCount: jizhileResult.wordCount,
+            platform,
+            method: 'jizhile',
+            apiCost: jizhileResult.apiCost,
+          };
+
+          // 如果启用内容清理
+          if (options.enableClean && jizhileResult.wordCount > 100) {
+            console.log(`🧹 开始清理极致了API获取的内容...`);
+
+            try {
+              const cleanResult = await ContentCleanerService.cleanContent(
+                jizhileResult.content,
+                options.cleanConfig
+              );
+
+              if (cleanResult.success) {
+                console.log(`✅ 内容清理成功: ${cleanResult.wordCountBefore} → ${cleanResult.wordCountAfter} 字`);
+
+                result.content = cleanResult.cleanedContent;
+                result.wordCount = cleanResult.wordCountAfter;
+                result.cleanResult = {
+                  cleaned: true,
+                  wordCountBefore: cleanResult.wordCountBefore,
+                  wordCountAfter: cleanResult.wordCountAfter,
+                  removedSections: cleanResult.removedSections,
+                };
+              } else {
+                console.warn(`⚠️  内容清理失败: ${cleanResult.error}`);
+                result.cleanResult = {
+                  cleaned: false,
+                  wordCountBefore: jizhileResult.wordCount,
+                  wordCountAfter: jizhileResult.wordCount,
+                  removedSections: [],
+                  error: cleanResult.error,
+                };
+              }
+            } catch (cleanError: any) {
+              console.warn(`⚠️  内容清理异常: ${cleanError.message}`);
+              result.cleanResult = {
+                cleaned: false,
+                wordCountBefore: jizhileResult.wordCount,
+                wordCountAfter: jizhileResult.wordCount,
+                removedSections: [],
+                error: cleanError.message,
+              };
+            }
+          }
+
+          console.log(`🎉 极致了API获取微信文章成功: ${result.wordCount} 字`);
+          return result;
+        } else {
+          console.warn(`⚠️  极致了API获取失败: ${jizhileResult.error}，将降级使用HTML解析`);
+          // 不直接返回错误，而是继续使用HTML解析方法作为备选方案
+        }
+      }
 
       // 根据平台设置特殊的请求头
       const headers: Record<string, string> = {
@@ -402,6 +591,7 @@ export class ContentFetcherService {
         author: extracted.author,
         wordCount,
         platform,
+        method: 'html', // 标识使用HTML解析方法
       };
 
       // 如果启用内容清理
@@ -484,6 +674,7 @@ export class ContentFetcherService {
         wordCount: 0,
         error: error.message,
         platform: this.detectPlatform(url),
+        method: 'fallback',
       };
     }
   }
