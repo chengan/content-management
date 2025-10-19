@@ -1,10 +1,11 @@
-import type { 
-  RewriteSegment, 
+import type {
+  RewriteSegment,
   SegmentData,
-  SegmentStrategy, 
+  SegmentStrategy,
   QualityScore,
-  RewriteConfig 
+  RewriteConfig
 } from '../src/types/rewrite';
+import { getOpenRouterClient } from './openrouter-client';
 
 export interface AnalyzeSegmentsParams {
   articleId: string;
@@ -120,19 +121,20 @@ export class RewriteService {
   
   /**
    * AI智能分段：使用AI模型分析文章结构进行分段
+   * 🔄 v2.0: 使用统一的 AI 客户端，支持多服务降级
    */
-  private static async aiSegmentation(content: string, maxLength: number, minLength: number, aiModel: string): Promise<Array<Omit<SegmentData, 'id' | 'order' | 'rewriteStatus'>>> {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    
-    if (!apiKey) {
-      throw new Error('OPENROUTER_API_KEY 环境变量未配置，无法进行AI分段');
-    }
-    
-    console.log(`🤖 调用OpenRouter API进行AI分段`);
+  private static async aiSegmentation(
+    content: string,
+    maxLength: number,
+    minLength: number,
+    aiModel: string
+  ): Promise<Array<Omit<SegmentData, 'id' | 'order' | 'rewriteStatus'>>> {
+
+    console.log(`🤖 开始 AI 智能分段`);
     console.log(`   模型: ${aiModel}`);
     console.log(`   文章长度: ${content.length}字`);
     console.log(`   分段长度范围: ${minLength}-${maxLength}字`);
-    
+
     const prompt = `你是专业的文章结构分析专家。请分析以下文章，并按照语义完整性将其分成若干段落。
 
 要求：
@@ -156,48 +158,34 @@ ${content}
 }`;
 
     try {
-      console.log(`🌐 发送请求到 OpenRouter API...`);
-      
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://wx-content-management.app',
-          'X-Title': 'WeChat Content Management'
-        },
-        body: JSON.stringify({
-          model: aiModel,
-          messages: [
-            {
-              role: 'system',
-              content: '你是专业的文章结构分析专家。请分析文章并返回JSON格式的分段结果。'
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.2,
-          max_tokens: 4000
-        })
+      // 🔥 关键修改：统一使用客户端调用
+      const client = getOpenRouterClient();
+
+      // 使用带降级的调用方法
+      const response = await client.chatCompletionWithFallback({
+        model: aiModel,
+        messages: [
+          {
+            role: 'system',
+            content: '你是专业的文章结构分析专家。请分析文章并返回JSON格式的分段结果。'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.2,
+        max_tokens: 4000
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`AI分段API调用失败: ${response.status} ${response.statusText} - ${errorText}`);
+      const responseContent = response.choices[0]?.message?.content;
+      if (!responseContent) {
+        throw new Error('AI 返回内容为空');
       }
 
-      console.log(`✅ OpenRouter API响应成功`);
-      const data = await response.json();
-      
-      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        throw new Error('OpenRouter API返回数据格式错误：缺少choices或message');
-      }
-
-      const responseContent = data.choices[0].message.content;
       console.log(`📝 AI返回内容长度: ${responseContent.length}字符`);
-      
+
+      // 解析 JSON 结果
       let result;
       try {
         result = JSON.parse(responseContent);
@@ -205,52 +193,59 @@ ${content}
         console.error('JSON解析失败，原始内容:', responseContent);
         throw new Error(`AI分段结果JSON解析失败: ${parseError}`);
       }
-      
+
       if (!result.segments || !Array.isArray(result.segments)) {
         throw new Error('AI分段结果格式错误：缺少segments数组');
       }
 
       console.log(`🔢 AI分段结果: 共${result.segments.length}个段落`);
 
-      // 转换AI分段结果为标准格式
-      const segments: Array<Omit<SegmentData, 'id' | 'order' | 'rewriteStatus'>> = result.segments.map((seg: any, index: number) => {
-        if (!seg.content || typeof seg.content !== 'string') {
-          throw new Error(`段落${index + 1}格式错误：缺少content字段或content不是字符串`);
-        }
+      // 转换为标准格式
+      const segments: Array<Omit<SegmentData, 'id' | 'order' | 'rewriteStatus'>> =
+        result.segments.map((seg: any, index: number) => {
+          if (!seg.content || typeof seg.content !== 'string') {
+            throw new Error(`段落${index + 1}格式错误：缺少content字段`);
+          }
 
-        const segmentContent = seg.content.trim();
-        
-        console.log(`   段落${index + 1}: ${segmentContent.length}字 - ${seg.reason || '无理由'}`);
+          const segmentContent = seg.content.trim();
+          console.log(`   段落${index + 1}: ${segmentContent.length}字 - ${seg.reason || '无理由'}`);
 
-        return {
-          originalContent: segmentContent,
-          wordCount: segmentContent.length,
-          reason: seg.reason || 'AI智能分段'
-        };
-      });
+          return {
+            originalContent: segmentContent,
+            wordCount: segmentContent.length,
+            reason: seg.reason || 'AI智能分段'
+          };
+        });
 
       // 验证分段结果
       const totalSegmentLength = segments.reduce((sum, seg) => sum + seg.wordCount, 0);
       const originalLength = content.length;
       const lengthDifference = Math.abs(totalSegmentLength - originalLength);
       const lengthDifferencePercent = (lengthDifference / originalLength) * 100;
-      
+
       console.log(`📊 分段内容验证:`);
       console.log(`   原文长度: ${originalLength}字`);
       console.log(`   分段总长度: ${totalSegmentLength}字`);
       console.log(`   差异: ${lengthDifference}字 (${lengthDifferencePercent.toFixed(1)}%)`);
-      
+
       if (lengthDifferencePercent > 10) {
         console.warn(`⚠️  内容长度差异较大(${lengthDifferencePercent.toFixed(1)}%)`);
-        // 不再回退，直接报错让用户知道
-        throw new Error(`AI分段存在较大内容差异(${lengthDifferencePercent.toFixed(1)}%)，请检查模型输出或调整参数`);
+        throw new Error(
+          `AI分段存在较大内容差异(${lengthDifferencePercent.toFixed(1)}%)，请检查模型输出`
+        );
       }
 
-      console.log(`✅ AI智能分段完成: 使用模型 ${aiModel}, 生成 ${segments.length} 个段落`);
+      console.log(`✅ AI智能分段完成，生成 ${segments.length} 个段落`);
       return segments;
 
     } catch (error: any) {
       console.error(`❌ AI分段失败:`, error.message);
+
+      // 提供更友好的错误信息
+      if (error.message.includes('未配置任何 AI 服务')) {
+        throw new Error('AI 服务未配置，请在 .env.local 中配置 AI_API_KEY 和 AI_API_BASE_URL');
+      }
+
       throw new Error(`AI分段失败: ${error.message}`);
     }
   }

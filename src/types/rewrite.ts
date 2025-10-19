@@ -1,5 +1,15 @@
 // AI智能改写模块类型定义
 
+// 质量评分接口
+export interface QualityScore {
+  overallScore: number;
+  originality: number;
+  fluency: number;
+  styleConsistency: number;
+  readability: number;
+  suggestions: string[];
+}
+
 // 分段策略 - 仅支持AI智能分段
 export type SegmentStrategy = 'ai';
 

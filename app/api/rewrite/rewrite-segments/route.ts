@@ -2,73 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSuccessResponse, createErrorResponse, logApiRequest, logApiError, isValidUUID } from '../../../../lib/api-utils';
 import RewriteService from '../../../../lib/rewrite-service';
 import LiDanPromptService, { LiDanPromptConfig } from '../../../../lib/lidan-prompt-service';
+import { getOpenRouterClient } from '../../../../lib/openrouter-client';
+import { getAIConfig } from '../../../../lib/ai-config';
 
 // 处理OPTIONS预检请求
 export async function OPTIONS() {
-  return new NextResponse(null, { 
-    status: 200, 
+  return new NextResponse(null, {
+    status: 200,
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     }
   });
-}
-
-// 模拟OpenRouter API调用（当没有真实API密钥时使用）
-async function mockOpenRouterCall(prompt: string, content: string): Promise<string> {
-  // 模拟API延迟
-  await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
-  
-  // 使用本地模拟改写
-  return RewriteService.mockRewriteSegment(content, 'lidan');
-}
-
-// 真实的OpenRouter API调用（当有API密钥时使用）
-async function callOpenRouterAPI(prompt: string, model: string = 'openai/gpt-3.5-turbo'): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  
-  if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY 环境变量未配置');
-  }
-  
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://wx-content-management.app',
-      'X-Title': 'WeChat Content Management'
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        {
-          role: 'system',
-          content: '你是专业的李诞风格文案改写助手。'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.8,
-      max_tokens: 2000
-    })
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(`OpenRouter API 调用失败 (${model}): ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
-  }
-  
-  const data = await response.json();
-  
-  if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-    throw new Error('OpenRouter API 返回数据格式错误');
-  }
-  
-  return data.choices[0].message.content.trim();
 }
 
 // POST: 改写文章段落
@@ -133,61 +79,90 @@ export async function POST(request: NextRequest) {
     }
     
     console.log(`🎭 开始改写段落: ${articleId}, 共 ${segments.length} 个段落, 风格: ${style}${aiModel ? `, 模型: ${aiModel}` : ''}`);
-    
-    const rewrittenSegments = [];
-    const errors = [];
+
+    const rewrittenSegments: any[] = [];
+    const errors: string[] = [];
     let successCount = 0;
     let errorCount = 0;
-    
-    // 检查是否有OpenRouter API密钥
-    const hasApiKey = !!process.env.OPENROUTER_API_KEY;
+
+    // 🔥 关键修改：使用统一的 AI 配置和客户端
+    const aiConfig = getAIConfig();
+    const hasAvailableService = aiConfig.hasAvailableService();
     const modelToUse = aiModel || 'openai/gpt-3.5-turbo';
-    console.log(`🔑 OpenRouter API 状态: ${hasApiKey ? '已配置' : '未配置，将使用模拟改写'}`);
+
+    console.log(`🔑 AI 服务状态: ${hasAvailableService ? '已配置' : '未配置，将使用模拟改写'}`);
     console.log(`🤖 使用模型: ${modelToUse}`);
-    
-    // 分批处理段落（并行处理提高效率）
+
+    // 分批处理段落
     for (let i = 0; i < segments.length; i += batchSize) {
       const batch = segments.slice(i, i + batchSize);
-      
+
       const batchPromises = batch.map(async (segment) => {
         try {
           console.log(`📝 改写段落 ${segment.order}: ${segment.content.substring(0, 50)}...`);
-          
+
           let rewrittenContent = '';
-          
-          if (hasApiKey) {
-            // 使用真实API
-            const prompt = customPrompt || 
-              (styleConfig ? LiDanPromptService.generateCustomPrompt(styleConfig) : LiDanPromptService.generateBasePrompt()) +
+          let apiUsed = 'mock';
+          let modelUsed = 'mock';
+
+          if (hasAvailableService) {
+            // 🔥 使用统一客户端进行改写
+            const client = getOpenRouterClient();
+            const prompt = customPrompt ||
+              (styleConfig ?
+                LiDanPromptService.generateCustomPrompt(styleConfig) :
+                LiDanPromptService.generateBasePrompt()) +
               `\n\n需要改写的文字：\n${segment.content}`;
-            
-            rewrittenContent = await callOpenRouterAPI(prompt, modelToUse);
+
+            // 使用带降级的调用方法
+            const response = await client.chatCompletionWithFallback({
+              model: modelToUse,
+              messages: [
+                {
+                  role: 'system',
+                  content: '你是专业的李诞风格文案改写助手。'
+                },
+                {
+                  role: 'user',
+                  content: prompt
+                }
+              ],
+              temperature: 0.8,
+              max_tokens: 2000
+            });
+
+            rewrittenContent = response.choices[0]?.message?.content?.trim() || '';
+            const primaryService = aiConfig.getPrimaryService();
+            apiUsed = primaryService?.name || 'unknown';
+            modelUsed = modelToUse;
+
           } else {
-            // 使用模拟改写
+            // 降级到模拟改写
             const prompt = LiDanPromptService.generateSegmentPrompt(segment.content, styleConfig);
-            rewrittenContent = await mockOpenRouterCall(prompt, segment.content);
+            rewrittenContent = RewriteService.mockRewriteSegment(segment.content, style);
           }
-          
+
           // 计算改写质量
           const qualityScore = RewriteService.evaluateQuality(segment.content, rewrittenContent);
-          
+
+          successCount++;
           return {
             id: segment.id,
             order: segment.order,
             originalContent: segment.content,
-            rewrittenContent: rewrittenContent.trim(),
+            rewrittenContent: rewrittenContent,
             wordCount: rewrittenContent.length,
             rewriteStatus: 'completed' as const,
             qualityScore: qualityScore.overallScore,
-            apiUsed: hasApiKey ? 'openrouter' : 'mock',
-            modelUsed: hasApiKey ? modelToUse : 'mock'
+            apiUsed,
+            modelUsed
           };
-          
+
         } catch (error: any) {
           console.error(`❌ 段落 ${segment.order} 改写失败:`, error.message);
           errorCount++;
           errors.push(`段落 ${segment.order}: ${error.message}`);
-          
+
           return {
             id: segment.id,
             order: segment.order,
@@ -197,19 +172,16 @@ export async function POST(request: NextRequest) {
             rewriteStatus: 'failed' as const,
             qualityScore: 0,
             error: error.message,
-            apiUsed: hasApiKey ? 'openrouter' : 'mock',
-            modelUsed: hasApiKey ? modelToUse : 'mock'
+            apiUsed: 'none',
+            modelUsed: 'none'
           };
         }
       });
-      
+
       const batchResults = await Promise.all(batchPromises);
       rewrittenSegments.push(...batchResults);
-      
-      // 统计成功数量
-      successCount += batchResults.filter(r => r.rewriteStatus === 'completed').length;
-      
-      // 小延迟避免API限流
+
+      // 小延迟避免限流
       if (i + batchSize < segments.length) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
@@ -227,7 +199,7 @@ export async function POST(request: NextRequest) {
       totalSegments: segments.length,
       successCount,
       errorCount,
-      apiMode: hasApiKey ? 'real' : 'mock',
+      apiMode: hasAvailableService ? 'real' : 'mock',
       segments: rewrittenSegments,
       summary: {
         averageQuality: rewrittenSegments
@@ -240,12 +212,12 @@ export async function POST(request: NextRequest) {
     };
     
     return createSuccessResponse(result, {
-      message: hasApiKey 
+      message: hasAvailableService
         ? `段落改写完成！成功改写 ${successCount} 个段落，失败 ${errorCount} 个`
-        : `模拟改写完成！成功改写 ${successCount} 个段落（请配置 OPENROUTER_API_KEY 使用真实AI改写）`,
+        : `模拟改写完成！成功改写 ${successCount} 个段落（请配置 AI_API_KEY 使用真实AI改写）`,
       config: {
         batchSize,
-        apiMode: hasApiKey ? 'real' : 'mock',
+        apiMode: hasAvailableService ? 'real' : 'mock',
         modelUsed: modelToUse,
         styleConfig
       }

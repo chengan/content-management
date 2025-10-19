@@ -1,12 +1,14 @@
 /**
  * OpenRouter API客户端
  * 用于与OpenRouter服务进行通信，支持多种AI模型
+ *
+ * 🔄 v2.0 更新：支持多 AI 服务配置和自动降级
  */
 
 import { OPENROUTER_MODELS, FREE_MODELS, getModelById, isFreeModel } from './openrouter-models';
+import { getAIConfig, AIServiceConfig } from './ai-config';
 
 // 环境变量配置
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_TIMEOUT = 30000; // 30秒超时
 
 export interface OpenRouterMessage {
@@ -56,14 +58,36 @@ export interface OpenRouterError {
 
 /**
  * OpenRouter客户端类
+ * 🔄 v2.0: 支持自定义服务配置
  */
 export class OpenRouterClient {
   private apiKey: string;
   private baseUrl: string;
+  private serviceName: string;
 
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey || process.env.OPENROUTER_API_KEY || '';
-    this.baseUrl = OPENROUTER_API_URL;
+  constructor(config?: AIServiceConfig) {
+    if (config) {
+      // 使用传入的配置
+      this.apiKey = config.apiKey;
+      this.baseUrl = config.baseUrl;
+      this.serviceName = config.name;
+    } else {
+      // 自动从配置管理器获取主服务
+      const primaryService = getAIConfig().getPrimaryService();
+      if (primaryService) {
+        this.apiKey = primaryService.apiKey;
+        this.baseUrl = primaryService.baseUrl;
+        this.serviceName = primaryService.name;
+      } else {
+        // 兼容旧的环境变量（向后兼容）
+        this.apiKey = process.env.OPENROUTER_API_KEY || '';
+        this.baseUrl = 'https://openrouter.ai/api/v1';
+        this.serviceName = 'OpenRouter';
+        console.warn('⚠️  使用兼容模式：从 OPENROUTER_API_KEY 读取配置');
+      }
+    }
+
+    console.log(`🤖 AI 客户端初始化: ${this.serviceName} (${this.baseUrl})`);
   }
 
   /**
@@ -158,11 +182,59 @@ export class OpenRouterClient {
   }
 
   /**
+   * 带降级机制的 AI 调用
+   * 主服务失败时自动切换到备用服务
+   * 🔄 v2.0 新增方法
+   */
+  async chatCompletionWithFallback(request: OpenRouterRequest): Promise<OpenRouterResponse> {
+    const config = getAIConfig();
+    const services = config.getAllServices();
+
+    if (services.length === 0) {
+      throw new Error('未配置任何 AI 服务，请检查环境变量配置 (AI_API_KEY + AI_API_BASE_URL 或 OPENROUTER_API_KEY)');
+    }
+
+    let lastError: Error | null = null;
+
+    // 按优先级尝试每个服务
+    for (const service of services) {
+      try {
+        console.log(`🔄 尝试使用 AI 服务: ${service.name}`);
+
+        // 模型名称映射（不同服务可能需要不同的模型名格式）
+        const mappedModel = config.mapModelName(request.model, service.name);
+        const mappedRequest = { ...request, model: mappedModel };
+
+        // 使用特定服务的配置创建临时客户端
+        const client = new OpenRouterClient(service);
+        const response = await client.chatCompletion(mappedRequest);
+
+        console.log(`✅ AI 服务调用成功: ${service.name}`);
+        return response;
+
+      } catch (error: any) {
+        lastError = error;
+        console.error(`❌ AI 服务 ${service.name} 调用失败:`, error.message);
+
+        // 如果还有备用服务，继续尝试
+        if (services.indexOf(service) < services.length - 1) {
+          console.log(`🔄 切换到下一个备用服务...`);
+          await new Promise(resolve => setTimeout(resolve, 500)); // 短暂延迟
+          continue;
+        }
+      }
+    }
+
+    // 所有服务都失败
+    throw new Error(`所有 AI 服务均不可用。最后错误: ${lastError?.message}`);
+  }
+
+  /**
    * 简化的文本生成方法
    */
   async generateText(
-    prompt: string, 
-    systemPrompt?: string, 
+    prompt: string,
+    systemPrompt?: string,
     modelId: string = 'mistralai/mistral-7b-instruct:free',
     options: Partial<OpenRouterRequest> = {}
   ): Promise<string> {
@@ -239,14 +311,16 @@ export class OpenRouterClient {
 }
 
 // 默认客户端实例
-let defaultClient: OpenRouterClient;
+let defaultClient: OpenRouterClient | null = null;
 
 /**
  * 获取默认客户端实例
+ * 🔄 v2.0: 使用配置管理器自动获取主服务
+ * @param forceNew 是否强制创建新实例
  */
-export function getOpenRouterClient(apiKey?: string): OpenRouterClient {
-  if (!defaultClient || apiKey) {
-    defaultClient = new OpenRouterClient(apiKey);
+export function getOpenRouterClient(forceNew: boolean = false): OpenRouterClient {
+  if (!defaultClient || forceNew) {
+    defaultClient = new OpenRouterClient(); // 使用配置管理器的主服务
   }
   return defaultClient;
 }
